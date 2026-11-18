@@ -18,6 +18,9 @@ import (
 
 	"github.com/joakimcarlsson/flight-club/internal/award"
 	"github.com/joakimcarlsson/flight-club/internal/award/alaska"
+	"github.com/joakimcarlsson/flight-club/internal/award/ana"
+	"github.com/joakimcarlsson/flight-club/internal/award/cathay"
+	"github.com/joakimcarlsson/flight-club/internal/award/delta"
 	"github.com/joakimcarlsson/flight-club/internal/award/jetblue"
 	"github.com/joakimcarlsson/flight-club/internal/award/sas"
 	"github.com/joakimcarlsson/flight-club/internal/award/virgin"
@@ -111,6 +114,16 @@ func run() error {
 			Concurrency: 2,
 			MinInterval: time.Second,
 		},
+		{
+			Program:     ana.New(newClient()),
+			Concurrency: 2,
+			MinInterval: 500 * time.Millisecond,
+		},
+		{
+			Program:     cathay.New(newClient()),
+			Concurrency: 2,
+			MinInterval: 500 * time.Millisecond,
+		},
 	}
 	b, err := browser.New(browser.Options{
 		Headless:    true,
@@ -119,13 +132,17 @@ func run() error {
 		NoSandbox:   os.Getenv("FLIGHT_CLUB_NO_SANDBOX") == "true",
 	})
 	if err != nil {
-		slog.WarnContext(ctx, "no browser, skipping jetblue", "error", err)
+		slog.WarnContext(ctx, "no browser, skipping jetblue and delta", "error", err)
 	} else {
 		defer func() { _ = b.Close() }()
 		programs = append(programs, award.Paced{
 			Program:     jetblue.New(b),
 			Concurrency: 2,
 			MinInterval: 2 * time.Second,
+		}, award.Paced{
+			Program:     delta.New(b),
+			Concurrency: 1,
+			MinInterval: 5 * time.Second,
 		})
 	}
 	awards := award.NewSearcher(programs...)

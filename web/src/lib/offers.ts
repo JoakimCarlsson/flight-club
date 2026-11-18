@@ -38,6 +38,9 @@ const PROGRAMS: Record<string, string> = {
   sas: "SAS EuroBonus",
   virgin: "Virgin Flying Club",
   jetblue: "JetBlue TrueBlue",
+  delta: "Delta SkyMiles",
+  ana: "ANA Mileage Club",
+  cathay: "Cathay Asia Miles",
 };
 
 /** The airline that runs each loyalty program, by program key. */
@@ -46,6 +49,9 @@ const PROGRAM_AIRLINES: Record<string, string> = {
   sas: "SK",
   virgin: "VS",
   jetblue: "B6",
+  delta: "DL",
+  ana: "NH",
+  cathay: "CX",
 };
 
 /**

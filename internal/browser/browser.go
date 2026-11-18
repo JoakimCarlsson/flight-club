@@ -110,7 +110,9 @@ type Body struct {
 // Captured is the result of one Collect: the rendered HTML, the media resource
 // URLs the page loaded, and any response bodies that matched CaptureBody.
 type Captured struct {
-	HTML      string
+	HTML string
+	// URL is the address the page ended on, after any redirects.
+	URL       string
 	Resources []Resource
 	Bodies    []Body
 }
@@ -131,6 +133,18 @@ type CollectOpts struct {
 	// CaptureBody decides which response bodies to read into Captured.Bodies.
 	// Nil captures nothing.
 	CaptureBody func(url, contentType string) bool
+	// WarmUp is a page opened in the same context before url, such as the
+	// site's home page, so its bot protection scripts can earn the cookies
+	// a deep link is refused without. Empty skips it.
+	WarmUp string
+	// WarmUpDelay is how long the WarmUp page is given to run its scripts
+	// before url is opened; defaults to 6s.
+	WarmUpDelay time.Duration
+	// Prepare is JavaScript evaluated on the WarmUp page once it has had
+	// its delay, before url is opened, such as to leave the search a site's
+	// own form would store for its results page. Empty skips it; it is
+	// ignored without WarmUp.
+	Prepare string
 }
 
 // Collect navigates url in an isolated context, optionally scrolling to trigger
@@ -168,6 +182,10 @@ func (b *Browser) Collect(
 	}
 	defer func() { _ = page.Close() }()
 	page = page.WithContext(ctx)
+
+	if err := warmUp(ctx, page, opts); err != nil {
+		return Captured{}, err
+	}
 
 	accept := opts.Accept
 	if accept == nil {
@@ -235,14 +253,60 @@ func (b *Browser) Collect(
 		html = ""
 	}
 
+	final, err := page.URL()
+	if err != nil {
+		final = ""
+	}
+
 	mu.Lock()
 	out := Captured{
 		HTML:      html,
+		URL:       final,
 		Resources: append([]Resource(nil), resources...),
 		Bodies:    append([]Body(nil), bodies...),
 	}
 	mu.Unlock()
 	return out, nil
+}
+
+// warmUp opens opts.WarmUp in page and waits opts.WarmUpDelay, moving the
+// pointer about meanwhile the way a visitor would, so the site's bot
+// protection sees an ordinary visit before the deep link, then evaluates
+// opts.Prepare there. It does nothing when opts.WarmUp is empty, and
+// returns an error when the navigation or the script fails or ctx ends.
+func warmUp(ctx context.Context, page *bonk.Page, opts CollectOpts) error {
+	if opts.WarmUp == "" {
+		return nil
+	}
+	timeout := opts.Timeout
+	if timeout <= 0 {
+		timeout = 30 * time.Second
+	}
+	if err := page.Navigate(opts.WarmUp, bonk.WithTimeout(timeout)); err != nil {
+		return fmt.Errorf("browser: warm up %s: %w", opts.WarmUp, err)
+	}
+	delay := opts.WarmUpDelay
+	if delay <= 0 {
+		delay = 6 * time.Second
+	}
+	const steps = 6
+	for i := range steps {
+		_ = page.Mouse().Move(
+			float64(200+i*137%900),
+			float64(150+i*89%500),
+		)
+		select {
+		case <-time.After(delay / steps):
+		case <-ctx.Done():
+			return ctx.Err()
+		}
+	}
+	if opts.Prepare != "" {
+		if _, err := page.Evaluate(opts.Prepare); err != nil {
+			return fmt.Errorf("browser: prepare on %s: %w", opts.WarmUp, err)
+		}
+	}
+	return nil
 }
 
 // defaultAccept records responses that look like playable media or images.
