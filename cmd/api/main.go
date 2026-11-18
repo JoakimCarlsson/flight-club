@@ -5,13 +5,21 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"net/http"
 	"os"
 	"os/signal"
 	"syscall"
+	"time"
 
+	"github.com/joakimcarlsson/flight-club/internal/award"
+	"github.com/joakimcarlsson/flight-club/internal/award/alaska"
 	"github.com/joakimcarlsson/flight-club/internal/config"
 	"github.com/joakimcarlsson/flight-club/internal/httpx"
 )
+
+// programTimeout is the longest one loyalty program is waited on for one
+// search.
+const programTimeout = 30 * time.Second
 
 // version is the reported build version; override with -ldflags.
 var version = "dev"
@@ -46,7 +54,15 @@ func run() error {
 	)
 	defer stop()
 
-	srv := httpx.New(httpx.Config{Addr: cfg.Addr, Version: version})
+	awards := award.NewSearcher(award.Paced{
+		Program:     alaska.New(&http.Client{Timeout: programTimeout}),
+		Concurrency: 2,
+		MinInterval: 500 * time.Millisecond,
+	})
+	srv := httpx.New(
+		httpx.Config{Addr: cfg.Addr, Version: version},
+		httpx.Deps{Awards: awards},
+	)
 	return srv.Start(ctx)
 }
 

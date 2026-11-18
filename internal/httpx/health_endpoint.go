@@ -19,10 +19,15 @@ type healthResponse struct {
 // OpenAPI description. It is never output cached: a probe has to reach the
 // process every time.
 func (s *Server) registerHealth() {
-	s.router.Get("/api/health", s.health,
+	s.router.Get(
+		"/api/health",
+		s.health,
 		openapi.Tags("Health"),
 		openapi.Summary("Check that the API is running"),
-		openapi.ReturnsBody[healthResponse](http.StatusOK, "The API is running."),
+		openapi.ReturnsBody[healthResponse](
+			http.StatusOK,
+			"The API is running.",
+		),
 	)
 }
 

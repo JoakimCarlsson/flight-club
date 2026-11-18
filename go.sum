@@ -1,3 +1,7 @@
+github.com/coder/websocket v1.8.14 h1:9L0p0iKiNOibykf283eHkKUHHrpG7f65OE3BhhO7v9g=
+github.com/coder/websocket v1.8.14/go.mod h1:NX3SzP+inril6yawo5CQXx8+fk145lPDC6pumgx0mVg=
+github.com/joakimcarlsson/bonk v0.5.0 h1:ZYx/RYIqS7Go/vElM+BjLN2D0NAsY65WkO7oAoallns=
+github.com/joakimcarlsson/bonk v0.5.0/go.mod h1:zFZWStSeqh3zoFaF12U01PWE+pGnjaeulfRZa9KuvvA=
 github.com/joakimcarlsson/minmux/openapi v0.2.0 h1:sbcm8mrafN795YB8MWyWXH1NMoNitPr+0oeYrl0nU20=
 github.com/joakimcarlsson/minmux/openapi v0.2.0/go.mod h1:JO04zetQg0Jl3YR9jmwgWtBBZkFHVAfRMxnBW7pgK5I=
 github.com/joakimcarlsson/minmux/outputcache v0.1.0 h1:CFv9v/e8FidXOu6GrAi5WdiaX5ms8qpgYjfyvcc2Dgo=
@@ -10,3 +14,5 @@ github.com/joakimcarlsson/minmux/scalar v0.1.0 h1:n/Y6SnUgdfxaSwkr8b1T7tCPmhm6a6
 github.com/joakimcarlsson/minmux/scalar v0.1.0/go.mod h1:IGm0PUdWgO43hL4p4bj6R5joUcB31Rc40hKwZhsRiN0=
 github.com/joho/godotenv v1.5.1 h1:7eLL/+HRGLY0ldzfGMeQkb7vMd0as4CfYvUVzLqw0N0=
 github.com/joho/godotenv v1.5.1/go.mod h1:f4LDr5Voq0i2e/R5DDNOoa2zzDfwtkZa6DnEwAbqwq4=
+golang.org/x/image v0.37.0 h1:ZiRjArKI8GwxZOoEtUfhrBtaCN+4b/7709dlT6SSnQA=
+golang.org/x/image v0.37.0/go.mod h1:/3f6vaXC+6CEanU4KJxbcUZyEePbyKbaLoDOe4ehFYY=

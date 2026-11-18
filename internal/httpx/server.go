@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"time"
 
+	"github.com/joakimcarlsson/flight-club/internal/award"
 	"github.com/joakimcarlsson/flight-club/internal/config"
 	"github.com/joakimcarlsson/minmux/openapi"
 	"github.com/joakimcarlsson/minmux/outputcache"
@@ -28,6 +29,14 @@ type Config struct {
 	Version string
 }
 
+// Deps are the subsystems the handlers work through. They are separate from
+// [Config] because they are not settings and are what a caller would
+// substitute.
+type Deps struct {
+	// Awards searches the loyalty programs.
+	Awards *award.Searcher
+}
+
 // Server owns the minmux router and the underlying http.Server.
 type Server struct {
 	addr    string
@@ -38,14 +47,17 @@ type Server struct {
 	// cache holds the responses of the routes that opted in to output
 	// caching, in process memory.
 	cache *outputcache.Cache
+	// awards searches the loyalty programs.
+	awards *award.Searcher
 }
 
-// New constructs a Server from cfg with all routes registered.
-func New(cfg Config) *Server {
+// New constructs a Server from cfg and deps with all routes registered.
+func New(cfg Config, deps Deps) *Server {
 	s := &Server{
 		addr:    cfg.Addr,
 		version: cfg.Version,
 		router:  router.New(),
+		awards:  deps.Awards,
 	}
 	s.docs = openapi.NewGenerator(openapi.Info{
 		Title:   "Flight Club",
@@ -64,13 +76,13 @@ func New(cfg Config) *Server {
 // routes registers every route on the router.
 func (s *Server) routes() {
 	s.registerHealth()
+	s.registerAwards()
 	s.registerDocs()
 }
 
 // Start runs the server until ctx is cancelled, then drains gracefully and
-// stops the output cache's cleanup. It
-// returns the error that stopped the server from listening, or the error
-// from a shutdown that did not finish within config.ShutdownTimeout.
+// stops the output cache's cleanup. It returns the error that stopped the
+// server from listening, or the error from a shutdown that did not finish within config.ShutdownTimeout.
 func (s *Server) Start(ctx context.Context) error {
 	defer s.cache.Close()
 
@@ -97,9 +109,4 @@ func (s *Server) Start(ctx context.Context) error {
 		defer cancel()
 		return srv.Shutdown(shutCtx)
 	}
-}
-
-// Handler exposes the router for tests via httptest.
-func (s *Server) Handler() http.Handler {
-	return s.router
 }
