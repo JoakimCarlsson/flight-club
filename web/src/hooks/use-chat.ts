@@ -2,6 +2,7 @@ import { useCallback, useRef, useState } from "react";
 import {
   type AwardResult,
   type ChatEvent,
+  type Offer,
   type SearchView,
   type Step,
   streamChat,
@@ -26,6 +27,9 @@ export interface Run {
   search?: SearchView;
   /** Program-days keyed by program, direction and date. */
   steps: Record<string, Step>;
+  /** Every offer found so far, growing as each program-day finishes. */
+  offers: Offer[];
+  /** The finished search, once every program-day is done. */
   results?: AwardResult;
   failed?: boolean;
 }
@@ -73,7 +77,7 @@ export function useChat() {
       const updateRun = (id: string, change: (r: Run) => Run) =>
         setRuns((prev) => ({
           ...prev,
-          [id]: change(prev[id] ?? { id, steps: {} }),
+          [id]: change(prev[id] ?? { id, steps: {}, offers: [] }),
         }));
 
       /**
@@ -94,14 +98,22 @@ export function useChat() {
             break;
           case "step":
             if (!ev.callId || !ev.step) break;
-            updateRun(ev.callId, (r) => ({
-              ...r,
-              steps: { ...r.steps, [stepKey(ev.step!)]: ev.step! },
-            }));
+            updateRun(ev.callId, (r) => {
+              const { found, ...step } = ev.step!;
+              return {
+                ...r,
+                steps: { ...r.steps, [stepKey(step)]: step },
+                offers: found ? [...r.offers, ...found] : r.offers,
+              };
+            });
             break;
           case "results":
             if (!ev.callId) break;
-            updateRun(ev.callId, (r) => ({ ...r, results: ev.results }));
+            updateRun(ev.callId, (r) => ({
+              ...r,
+              results: ev.results,
+              offers: ev.results?.offers ?? r.offers,
+            }));
             break;
           case "toolResult":
             if (ev.callId && ev.failed) {

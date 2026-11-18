@@ -1,4 +1,5 @@
-import { ArrowUp, Loader2, Plane, Square } from "lucide-react";
+import { ArrowUp, Loader2, PlaneTakeoff, Square } from "lucide-react";
+import { motion } from "motion/react";
 import {
   type FormEvent,
   type KeyboardEvent,
@@ -7,16 +8,29 @@ import {
   useState,
 } from "react";
 import Markdown from "react-markdown";
-import { Button } from "@/components/ui/button";
-import { Textarea } from "@/components/ui/textarea";
+import { AirlineLogo } from "@/components/airline-logo";
 import type { Message, Run } from "@/hooks/use-chat";
+import type { Offer } from "@/lib/chat";
+import {
+  airlineName,
+  dayOffset,
+  describeStops,
+  formatDate,
+  formatMoney,
+  formatPoints,
+  formatRange,
+  localDate,
+  localTime,
+  offerKey,
+  rank,
+} from "@/lib/offers";
 import { cn } from "@/lib/utils";
 
 /** Questions offered on an empty chat. */
 const EXAMPLES = [
   "Seattle to New York on 15 December, two people",
-  "Business class from Seattle to London next week",
-  "SEA to NYC 15–17 December, back 20 December",
+  "Business class Seattle to London, 10–14 March",
+  "SEA to NYC 15–17 Dec, back on the 20th",
 ];
 
 /**
@@ -26,6 +40,7 @@ const EXAMPLES = [
  * @param props.runs - Every search run, by id.
  * @param props.selectedId - The search shown in the workspace.
  * @param props.onSelect - Shows a search in the workspace.
+ * @param props.onFocusOffer - Shows a search and opens one of its offers.
  * @param props.busy - Set while the assistant is replying.
  * @param props.onSend - Sends a message.
  * @param props.onStop - Stops the reply in flight.
@@ -36,6 +51,7 @@ export function ChatPanel({
   runs,
   selectedId,
   onSelect,
+  onFocusOffer,
   busy,
   onSend,
   onStop,
@@ -44,16 +60,109 @@ export function ChatPanel({
   runs: Record<string, Run>;
   selectedId?: string;
   onSelect: (id: string) => void;
+  onFocusOffer: (runId: string, key: string) => void;
   busy: boolean;
   onSend: (text: string) => void;
   onStop: () => void;
 }) {
-  const [draft, setDraft] = useState("");
   const bottom = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
-    bottom.current?.scrollIntoView({ behavior: "smooth" });
+    bottom.current?.scrollIntoView({ behavior: "smooth", block: "end" });
   }, [messages]);
+
+  if (messages.length === 0) {
+    return (
+      <div className="flex h-full flex-col justify-center gap-8 px-6">
+        <div className="flex flex-col gap-3">
+          <span className="flex size-10 items-center justify-center rounded-xl bg-brand text-brand-foreground">
+            <PlaneTakeoff className="size-5" />
+          </span>
+          <h1 className="font-semibold text-2xl tracking-tight">
+            Where do you want to fly with your points?
+          </h1>
+          <p className="text-muted-foreground text-sm">
+            Say where, when and how many. I search the loyalty programs live and
+            show every award seat I find.
+          </p>
+        </div>
+        <Composer busy={busy} onSend={onSend} onStop={onStop} autoFocus />
+        <div className="flex flex-col gap-2">
+          {EXAMPLES.map((q) => (
+            <button
+              key={q}
+              type="button"
+              onClick={() => onSend(q)}
+              className="rounded-lg px-3 py-2 text-left text-muted-foreground text-sm transition-colors hover:bg-muted hover:text-foreground"
+            >
+              {q} →
+            </button>
+          ))}
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="flex h-full flex-col">
+      <header className="flex items-center gap-2 px-5 py-4 font-semibold tracking-tight">
+        <span className="flex size-6 items-center justify-center rounded-md bg-brand text-brand-foreground">
+          <PlaneTakeoff className="size-3.5" />
+        </span>
+        Flight Club
+      </header>
+
+      <div className="flex-1 overflow-y-auto px-5 pb-4">
+        <div className="flex flex-col gap-5">
+          {messages.map((m) => (
+            <MessageView
+              key={m.id}
+              message={m}
+              runs={runs}
+              selectedId={selectedId}
+              onSelect={onSelect}
+              onFocusOffer={onFocusOffer}
+            />
+          ))}
+          <div ref={bottom} />
+        </div>
+      </div>
+
+      <div className="p-4 pt-0">
+        <Composer busy={busy} onSend={onSend} onStop={onStop} />
+      </div>
+    </div>
+  );
+}
+
+/**
+ * Renders the box the next message is written in. Enter sends,
+ * Shift+Enter starts a new line; while the assistant replies, the button
+ * stops it.
+ *
+ * @param props.busy - Set while the assistant is replying.
+ * @param props.onSend - Sends a message.
+ * @param props.onStop - Stops the reply in flight.
+ * @param props.autoFocus - Focuses the box on mount.
+ * @returns The composer.
+ */
+function Composer({
+  busy,
+  onSend,
+  onStop,
+  autoFocus,
+}: {
+  busy: boolean;
+  onSend: (text: string) => void;
+  onStop: () => void;
+  autoFocus?: boolean;
+}) {
+  const [draft, setDraft] = useState("");
+  const box = useRef<HTMLTextAreaElement>(null);
+
+  useEffect(() => {
+    if (autoFocus) box.current?.focus();
+  }, [autoFocus]);
 
   /**
    * Sends the draft and clears the box.
@@ -80,81 +189,45 @@ export function ChatPanel({
   }
 
   return (
-    <div className="flex h-full flex-col">
-      <header className="flex items-center gap-2 border-b px-4 py-3 font-semibold">
-        <Plane className="size-4" />
-        Flight Club
-      </header>
-
-      <div className="flex-1 overflow-y-auto px-4 py-4">
-        {messages.length === 0 ? (
-          <div className="flex h-full flex-col justify-center gap-3">
-            <p className="text-muted-foreground text-sm">
-              Ask for award flights in plain words.
-            </p>
-            {EXAMPLES.map((q) => (
-              <button
-                key={q}
-                type="button"
-                onClick={() => onSend(q)}
-                className="rounded-lg border px-3 py-2 text-left text-sm hover:bg-accent"
-              >
-                {q}
-              </button>
-            ))}
-          </div>
+    <form
+      onSubmit={submit}
+      className="flex items-end gap-2 rounded-2xl border bg-background p-2 shadow-sm transition-shadow focus-within:shadow-md focus-within:ring-1 focus-within:ring-ring"
+    >
+      <textarea
+        value={draft}
+        onChange={(e) => setDraft(e.target.value)}
+        onKeyDown={onKeyDown}
+        placeholder="Stockholm to New York in March, two people…"
+        rows={1}
+        ref={box}
+        className="field-sizing-content max-h-40 min-h-9 flex-1 resize-none bg-transparent px-2 py-1.5 text-sm outline-none placeholder:text-muted-foreground"
+      />
+      <button
+        type={busy ? "button" : "submit"}
+        onClick={busy ? onStop : undefined}
+        disabled={!busy && !draft.trim()}
+        aria-label={busy ? "Stop" : "Send"}
+        className="flex size-9 shrink-0 items-center justify-center rounded-xl bg-foreground text-background transition-opacity disabled:opacity-30"
+      >
+        {busy ? (
+          <Square className="size-3 fill-current" />
         ) : (
-          <div className="flex flex-col gap-4">
-            {messages.map((m) => (
-              <MessageView
-                key={m.id}
-                message={m}
-                runs={runs}
-                selectedId={selectedId}
-                onSelect={onSelect}
-              />
-            ))}
-            <div ref={bottom} />
-          </div>
+          <ArrowUp className="size-4" />
         )}
-      </div>
-
-      <form onSubmit={submit} className="border-t p-3">
-        <div className="relative">
-          <Textarea
-            value={draft}
-            onChange={(e) => setDraft(e.target.value)}
-            onKeyDown={onKeyDown}
-            placeholder="Where do you want to fly?"
-            rows={2}
-            className="resize-none pr-12"
-          />
-          <Button
-            type={busy ? "button" : "submit"}
-            size="icon"
-            onClick={busy ? onStop : undefined}
-            disabled={!busy && !draft.trim()}
-            className="absolute right-2 bottom-2 size-8"
-          >
-            {busy ? (
-              <Square className="size-3" />
-            ) : (
-              <ArrowUp className="size-4" />
-            )}
-          </Button>
-        </div>
-      </form>
-    </div>
+      </button>
+    </form>
   );
 }
 
 /**
- * Renders one message, with a chip for every search run while writing it.
+ * Renders one message. An assistant message shows a card for every search
+ * it ran, above its text.
  *
  * @param props.message - The message.
  * @param props.runs - Every search run, by id.
  * @param props.selectedId - The search shown in the workspace.
  * @param props.onSelect - Shows a search in the workspace.
+ * @param props.onFocusOffer - Shows a search and opens one of its offers.
  * @returns The message.
  */
 function MessageView({
@@ -162,36 +235,49 @@ function MessageView({
   runs,
   selectedId,
   onSelect,
+  onFocusOffer,
 }: {
   message: Message;
   runs: Record<string, Run>;
   selectedId?: string;
   onSelect: (id: string) => void;
+  onFocusOffer: (runId: string, key: string) => void;
 }) {
   if (message.role === "user") {
     return (
-      <div className="ml-8 self-end rounded-2xl bg-primary px-3 py-2 text-primary-foreground text-sm">
+      <motion.div
+        initial={{ opacity: 0, y: 6 }}
+        animate={{ opacity: 1, y: 0 }}
+        className="ml-10 self-end rounded-2xl rounded-br-md bg-muted px-4 py-2.5 text-sm"
+      >
         {message.text}
-      </div>
+      </motion.div>
     );
   }
   return (
-    <div className="mr-8 flex flex-col gap-2">
-      {message.runs.map((id) => (
-        <RunChip
-          key={id}
-          run={runs[id]}
-          active={id === selectedId}
-          onClick={() => onSelect(id)}
-        />
-      ))}
+    <div className="flex flex-col gap-3">
+      {message.runs.map((id) => {
+        const run = runs[id];
+        return run ? (
+          <RunCard
+            key={id}
+            run={run}
+            active={id === selectedId}
+            onOpen={() => onSelect(id)}
+            onOffer={(key) => onFocusOffer(id, key)}
+          />
+        ) : null;
+      })}
       {message.text && (
-        <div className="prose prose-sm text-sm leading-relaxed [&_li]:my-0.5 [&_ol]:list-decimal [&_ol]:pl-5 [&_p]:my-1.5 [&_ul]:list-disc [&_ul]:pl-5">
+        <div className="text-sm leading-relaxed [&_li]:my-1 [&_ol]:list-decimal [&_ol]:pl-5 [&_p]:my-2 [&_strong]:font-semibold [&_ul]:list-disc [&_ul]:pl-5 [&>*:first-child]:mt-0">
           <Markdown>{message.text}</Markdown>
         </div>
       )}
-      {message.pending && !message.text && (
-        <Loader2 className="size-4 animate-spin text-muted-foreground" />
+      {message.pending && !message.text && message.runs.length === 0 && (
+        <span className="flex items-center gap-2 text-muted-foreground text-sm">
+          <Loader2 className="size-3.5 animate-spin" />
+          Reading your request…
+        </span>
       )}
       {message.error && (
         <p className="text-destructive text-sm">{message.error}</p>
@@ -201,43 +287,135 @@ function MessageView({
 }
 
 /**
- * Renders a search the assistant ran as a chip that opens it in the
- * workspace.
+ * Renders a search the assistant ran as a card: the trip, how far it got,
+ * and once offers are in, the best one, which opens in the workspace.
  *
  * @param props.run - The search.
- * @param props.active - Set when it is the one shown.
- * @param props.onClick - Shows it.
- * @returns The chip.
+ * @param props.active - Set when it is the one shown in the workspace.
+ * @param props.onOpen - Shows it in the workspace.
+ * @param props.onOffer - Shows it and opens one of its offers.
+ * @returns The card.
  */
-function RunChip({
+function RunCard({
   run,
   active,
+  onOpen,
+  onOffer,
+}: {
+  run: Run;
+  active: boolean;
+  onOpen: () => void;
+  onOffer: (key: string) => void;
+}) {
+  const s = run.search;
+  const steps = Object.values(run.steps);
+  const doneSteps = steps.filter((x) => x.state !== "running").length;
+  const finished = !!run.results || run.failed;
+  const best = rank(
+    run.offers.filter((o) => o.direction === "outbound"),
+    "best",
+  )[0];
+
+  return (
+    <motion.div
+      initial={{ opacity: 0, y: 6 }}
+      animate={{ opacity: 1, y: 0 }}
+      className={cn(
+        "overflow-hidden rounded-xl border bg-background transition-shadow",
+        active && "shadow-sm ring-1 ring-brand/40",
+      )}
+    >
+      <button
+        type="button"
+        onClick={onOpen}
+        className="flex w-full items-center justify-between gap-3 px-3.5 py-2.5 text-left hover:bg-muted/50"
+      >
+        <span className="flex flex-col">
+          <span className="font-medium text-sm">
+            {s ? `${s.origin} → ${s.destination}` : "Searching…"}
+          </span>
+          {s && (
+            <span className="text-muted-foreground text-xs">
+              {formatRange(s.departFrom, s.departTo)}
+              {s.returnFrom ? " · return" : ""} · {s.passengers} pax
+            </span>
+          )}
+        </span>
+        <span className="tabular flex items-center gap-1.5 text-muted-foreground text-xs">
+          {!finished && <Loader2 className="size-3 animate-spin" />}
+          {finished
+            ? `${run.offers.length} offers`
+            : steps.length
+              ? `${doneSteps}/${steps.length} days`
+              : "starting"}
+        </span>
+      </button>
+      {!finished && steps.length > 0 && (
+        <div className="h-0.5 bg-muted">
+          <motion.div
+            className="h-full bg-brand"
+            animate={{ width: `${(doneSteps / steps.length) * 100}%` }}
+          />
+        </div>
+      )}
+      {best && (
+        <BestOffer offer={best} onClick={() => onOffer(offerKey(best))} />
+      )}
+    </motion.div>
+  );
+}
+
+/**
+ * Renders the best offer of a search as a compact row in the chat.
+ *
+ * @param props.offer - The offer.
+ * @param props.onClick - Opens it in the workspace.
+ * @returns The row.
+ */
+function BestOffer({
+  offer: o,
   onClick,
 }: {
-  run?: Run;
-  active: boolean;
+  offer: Offer;
   onClick: () => void;
 }) {
-  const s = run?.search;
-  const running = run && !run.results && !run.failed;
+  const plus = dayOffset(o);
   return (
     <button
       type="button"
       onClick={onClick}
-      className={cn(
-        "flex items-center gap-2 self-start rounded-md border border-dashed px-2 py-1 text-muted-foreground text-xs hover:bg-accent",
-        active && "border-solid bg-accent text-foreground",
-      )}
+      className="flex w-full items-center gap-3 border-t px-3.5 py-3 text-left hover:bg-muted/50"
     >
-      {running ? (
-        <Loader2 className="size-3 animate-spin" />
-      ) : (
-        <Plane className="size-3" />
-      )}
-      {s
-        ? `${s.origin} → ${s.destination} · ${s.departFrom}${s.departTo !== s.departFrom ? ` – ${s.departTo}` : ""}`
-        : "Searching…"}
-      {run?.results && ` · ${run.results.offers.length} offers`}
+      <AirlineLogo
+        code={o.segments[0]?.operatingCarrier ?? "?"}
+        className="size-8"
+      />
+      <span className="flex min-w-0 flex-1 flex-col">
+        <span className="tabular font-medium text-sm">
+          {localTime(o.departure)} – {localTime(o.arrival)}
+          {plus > 0 && <sup className="ml-0.5 text-dear">+{plus}</sup>}
+          <span className="ml-2 rounded-full bg-brand/15 px-1.5 py-0.5 font-medium text-[10px] text-brand">
+            Best
+          </span>
+        </span>
+        <span className="truncate text-muted-foreground text-xs">
+          {formatDate(localDate(o.departure))} ·{" "}
+          {o.airlines.map(airlineName).join(", ")} · {describeStops(o)} ·{" "}
+          <span className="capitalize">{o.cabin}</span>
+        </span>
+      </span>
+      <span className="flex flex-col items-end">
+        <span className="tabular font-semibold text-sm">
+          {formatPoints(o.price.pointsPerPassenger)}
+        </span>
+        <span className="tabular text-muted-foreground text-[11px]">
+          +{" "}
+          {formatMoney(
+            o.price.taxesPerPassenger.amount,
+            o.price.taxesPerPassenger.currency,
+          )}
+        </span>
+      </span>
     </button>
   );
 }

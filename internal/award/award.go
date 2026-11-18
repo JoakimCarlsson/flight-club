@@ -364,6 +364,9 @@ type Step struct {
 	State string `json:"state"`
 	// Offers is how many offers it found, once done.
 	Offers int `json:"offers"`
+	// Found are the offers it found, once done, so a caller can show them
+	// before the whole search finishes.
+	Found []Offer `json:"found,omitempty"`
 	// Error says what went wrong, once failed.
 	Error string `json:"error,omitempty"`
 }
@@ -424,19 +427,20 @@ func (s *Searcher) Run(
 		}
 	}
 	for _, j := range jobs {
-		report(j.step(StepRunning, 0, nil))
+		report(j.step(StepRunning, nil, nil))
 	}
 	for _, j := range jobs {
 		wg.Go(func() {
 			offers, err := j.program.search(ctx, j.query)
-			kept := 0
+			var kept []Offer
 			for _, o := range offers {
 				if wanted(o, search.Cabins) {
-					kept++
+					o.Direction = j.direction
+					kept = append(kept, o)
 				}
 			}
 			if err != nil {
-				report(j.step(StepFailed, 0, err))
+				report(j.step(StepFailed, nil, err))
 			} else {
 				report(j.step(StepDone, kept, nil))
 			}
@@ -451,12 +455,7 @@ func (s *Searcher) Run(
 				})
 				return
 			}
-			for _, o := range offers {
-				if wanted(o, search.Cabins) {
-					o.Direction = j.direction
-					res.Offers = append(res.Offers, o)
-				}
-			}
+			res.Offers = append(res.Offers, kept...)
 		})
 	}
 	wg.Wait()
@@ -471,14 +470,16 @@ func (s *Searcher) Run(
 	return res, nil
 }
 
-// step describes j in state with offers found and err, which may be nil.
-func (j job) step(state string, offers int, err error) Step {
+// step describes j in state with the offers found and err, either of which
+// may be nil.
+func (j job) step(state string, found []Offer, err error) Step {
 	st := Step{
 		Program:   j.program.program.Key(),
 		Direction: j.direction,
 		Date:      j.query.Date.Format(time.DateOnly),
 		State:     state,
-		Offers:    offers,
+		Offers:    len(found),
+		Found:     found,
 	}
 	if err != nil {
 		st.Error = err.Error()

@@ -16,8 +16,9 @@ import (
 
 // topOffers is how many offers per direction the model is shown. The
 // traveller sees every offer in the panel; the model only needs the best to
-// write its summary, and every offer costs tokens.
-const topOffers = 8
+// write its summary, and a long list invites it to repeat the list in its
+// reply.
+const topOffers = 3
 
 // searchTool is search_awards: one award search across the programs, its
 // progress and results reported to the panel as they happen.
@@ -206,9 +207,20 @@ type summary struct {
 	Outbound []brief `json:"outbound"`
 	// Return are the cheapest return offers.
 	Return []brief `json:"return,omitempty"`
+	// CheapestByDay is the lowest points per passenger on each departure
+	// date, keyed by direction and then date.
+	CheapestByDay map[award.Direction]map[string]int `json:"cheapestByDay"`
+	// Note tells the model how to use the summary.
+	Note string `json:"note"`
 	// Errors are the program-days that failed.
 	Errors []award.ProgramError `json:"errors,omitempty"`
 }
+
+// summaryNote is the instruction carried with every summary, where the
+// model reads it right before it writes.
+const summaryNote = "The traveller already sees every offer in the panel " +
+	"and the best one pinned in the chat. Reply in at most three short " +
+	"sentences. Do not list flights or flight numbers."
 
 // brief is one offer as the model reads it.
 type brief struct {
@@ -229,7 +241,23 @@ type brief struct {
 
 // summarise keeps the cheapest offers of each direction of res.
 func summarise(res award.Result) summary {
-	out := summary{Total: len(res.Offers), Outbound: []brief{}}
+	out := summary{
+		Total:         len(res.Offers),
+		Outbound:      []brief{},
+		CheapestByDay: map[award.Direction]map[string]int{},
+		Note:          summaryNote,
+	}
+	for _, o := range res.Offers {
+		days := out.CheapestByDay[o.Direction]
+		if days == nil {
+			days = map[string]int{}
+			out.CheapestByDay[o.Direction] = days
+		}
+		d := o.Departure.Format(time.DateOnly)
+		if p, ok := days[d]; !ok || o.Price.PointsPerPassenger < p {
+			days[d] = o.Price.PointsPerPassenger
+		}
+	}
 	for _, dir := range []award.Direction{award.Outbound, award.Inbound} {
 		var offers []award.Offer
 		for _, o := range res.Offers {

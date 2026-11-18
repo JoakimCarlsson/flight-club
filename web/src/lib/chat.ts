@@ -84,6 +84,7 @@ export interface Step {
   date: string;
   state: "running" | "done" | "failed";
   offers: number;
+  found?: Offer[];
   error?: string;
 }
 
