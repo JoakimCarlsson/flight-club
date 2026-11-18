@@ -1,0 +1,12 @@
+github.com/joakimcarlsson/minmux/openapi v0.2.0 h1:sbcm8mrafN795YB8MWyWXH1NMoNitPr+0oeYrl0nU20=
+github.com/joakimcarlsson/minmux/openapi v0.2.0/go.mod h1:JO04zetQg0Jl3YR9jmwgWtBBZkFHVAfRMxnBW7pgK5I=
+github.com/joakimcarlsson/minmux/outputcache v0.1.0 h1:CFv9v/e8FidXOu6GrAi5WdiaX5ms8qpgYjfyvcc2Dgo=
+github.com/joakimcarlsson/minmux/outputcache v0.1.0/go.mod h1:aV+Y8LBBmaEJcgII0GfJ5Ok2O1LQ6627JHHb4QT7c54=
+github.com/joakimcarlsson/minmux/outputcache/inmemory v0.1.0 h1:Y1fzSKM9nKAKkzhDE31iMclWmLXwqJ2RQoHtP0aAip4=
+github.com/joakimcarlsson/minmux/outputcache/inmemory v0.1.0/go.mod h1:CulffhbIMiPEXcQ8kG3Ts+yR/9f84RrKMmk8zCdfR+Q=
+github.com/joakimcarlsson/minmux/router v0.2.0 h1:+p40GfaFLFmhFAbTctmG0BLGV6wYuPAQmD6Lo+GQ8cM=
+github.com/joakimcarlsson/minmux/router v0.2.0/go.mod h1:XOklgEf2VhPtx/UbhndBme+DmUGg/xf/Y5v5WhfDZDw=
+github.com/joakimcarlsson/minmux/scalar v0.1.0 h1:n/Y6SnUgdfxaSwkr8b1T7tCPmhm6a6gY1EGEjtzK0VQ=
+github.com/joakimcarlsson/minmux/scalar v0.1.0/go.mod h1:IGm0PUdWgO43hL4p4bj6R5joUcB31Rc40hKwZhsRiN0=
+github.com/joho/godotenv v1.5.1 h1:7eLL/+HRGLY0ldzfGMeQkb7vMd0as4CfYvUVzLqw0N0=
+github.com/joho/godotenv v1.5.1/go.mod h1:f4LDr5Voq0i2e/R5DDNOoa2zzDfwtkZa6DnEwAbqwq4=
