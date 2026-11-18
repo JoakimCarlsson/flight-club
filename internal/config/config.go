@@ -23,6 +23,16 @@ type Config struct {
 	Addr string
 	// Log is how the process writes its own log lines.
 	Log Log
+	// OpenRouter is the LLM account. Unset means no LLM client is built.
+	OpenRouter OpenRouter
+}
+
+// OpenRouter is the LLM account and model.
+type OpenRouter struct {
+	// APIKey is the API key, from OPENROUTER_API_KEY.
+	APIKey string
+	// Model is the model id, from OPENROUTER_MODEL.
+	Model string
 }
 
 // Log is how the process writes its own log lines.
@@ -40,6 +50,7 @@ const (
 	defaultAddr     = ":7080"
 	defaultLogLevel = "info"
 	defaultLogFmt   = "json"
+	defaultModel    = "z-ai/glm-5.3"
 )
 
 // Load reads the environment, first applying any .env in the working
@@ -55,6 +66,10 @@ func Load() (Config, error) {
 		Log: Log{
 			Level:  env("FLIGHT_CLUB_LOG_LEVEL", defaultLogLevel),
 			Format: env("FLIGHT_CLUB_LOG_FORMAT", defaultLogFmt),
+		},
+		OpenRouter: OpenRouter{
+			APIKey: os.Getenv("OPENROUTER_API_KEY"),
+			Model:  env("OPENROUTER_MODEL", defaultModel),
 		},
 	}, nil
 }

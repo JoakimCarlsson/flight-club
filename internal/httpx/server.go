@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"time"
 
+	"github.com/joakimcarlsson/ai/llm"
 	"github.com/joakimcarlsson/flight-club/internal/award"
 	"github.com/joakimcarlsson/flight-club/internal/config"
 	"github.com/joakimcarlsson/minmux/openapi"
@@ -35,6 +36,8 @@ type Config struct {
 type Deps struct {
 	// Awards searches the loyalty programs.
 	Awards *award.Searcher
+	// LLM is the language model client, nil when none is configured.
+	LLM llm.LLM
 }
 
 // Server owns the minmux router and the underlying http.Server.
@@ -49,6 +52,8 @@ type Server struct {
 	cache *outputcache.Cache
 	// awards searches the loyalty programs.
 	awards *award.Searcher
+	// llm is the language model client, nil when none is configured.
+	llm llm.LLM
 }
 
 // New constructs a Server from cfg and deps with all routes registered.
@@ -58,6 +63,7 @@ func New(cfg Config, deps Deps) *Server {
 		version: cfg.Version,
 		router:  router.New(),
 		awards:  deps.Awards,
+		llm:     deps.LLM,
 	}
 	s.docs = openapi.NewGenerator(openapi.Info{
 		Title:   "Flight Club",
@@ -73,11 +79,13 @@ func New(cfg Config, deps Deps) *Server {
 	return s
 }
 
-// routes registers every route on the router.
+// routes registers every route on the router. The SPA is registered last
+// because it matches everything.
 func (s *Server) routes() {
 	s.registerHealth()
 	s.registerAwards()
 	s.registerDocs()
+	s.registerSPA()
 }
 
 // Start runs the server until ctx is cancelled, then drains gracefully and

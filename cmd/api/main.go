@@ -3,6 +3,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log/slog"
 	"net/http"
@@ -15,6 +16,7 @@ import (
 	"github.com/joakimcarlsson/flight-club/internal/award/alaska"
 	"github.com/joakimcarlsson/flight-club/internal/config"
 	"github.com/joakimcarlsson/flight-club/internal/httpx"
+	"github.com/joakimcarlsson/flight-club/internal/llmc"
 )
 
 // programTimeout is the longest one loyalty program is waited on for one
@@ -54,6 +56,17 @@ func run() error {
 	)
 	defer stop()
 
+	model, err := llmc.New(llmc.Config{
+		APIKey: cfg.OpenRouter.APIKey,
+		Model:  cfg.OpenRouter.Model,
+	})
+	switch {
+	case errors.Is(err, llmc.ErrNotConfigured):
+		slog.WarnContext(ctx, "no LLM client", "reason", err)
+	case err != nil:
+		return err
+	}
+
 	awards := award.NewSearcher(award.Paced{
 		Program:     alaska.New(&http.Client{Timeout: programTimeout}),
 		Concurrency: 2,
@@ -61,7 +74,7 @@ func run() error {
 	})
 	srv := httpx.New(
 		httpx.Config{Addr: cfg.Addr, Version: version},
-		httpx.Deps{Awards: awards},
+		httpx.Deps{Awards: awards, LLM: model},
 	)
 	return srv.Start(ctx)
 }
