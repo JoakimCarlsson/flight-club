@@ -25,13 +25,50 @@ const AIRLINES: Record<string, string> = {
   TK: "Turkish",
   NH: "ANA",
   AF: "Air France",
+  SK: "SAS",
+  VS: "Virgin Atlantic",
+  B6: "JetBlue",
+  X1: "SAS Connect",
   KL: "KLM",
 };
 
 /** Display names of the loyalty programs, by key. */
 const PROGRAMS: Record<string, string> = {
   alaska: "Alaska Atmos",
+  sas: "SAS EuroBonus",
+  virgin: "Virgin Flying Club",
+  jetblue: "JetBlue TrueBlue",
 };
+
+/** The airline that runs each loyalty program, by program key. */
+const PROGRAM_AIRLINES: Record<string, string> = {
+  alaska: "AS",
+  sas: "SK",
+  virgin: "VS",
+  jetblue: "B6",
+};
+
+/**
+ * Names the airline whose logo stands for an offer: the first operating
+ * carrier, or the program's own airline when the offer has no flights.
+ *
+ * @param o - The offer.
+ * @returns An IATA airline code.
+ */
+export function logoCarrier(o: Offer): string {
+  return o.segments[0]?.operatingCarrier ?? PROGRAM_AIRLINES[o.program] ?? "?";
+}
+
+/**
+ * Reports whether an offer is a day's lowest price rather than a flight,
+ * as programs that only publish a calendar give.
+ *
+ * @param o - The offer.
+ * @returns True when the offer has no flights.
+ */
+export function isDailyPrice(o: Offer): boolean {
+  return o.segments.length === 0;
+}
 
 /**
  * Names an airline by its IATA code.

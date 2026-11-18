@@ -19,8 +19,10 @@ import {
   formatMoney,
   formatPoints,
   formatRange,
+  isDailyPrice,
   localDate,
   localTime,
+  logoCarrier,
   offerKey,
   rank,
 } from "@/lib/offers";
@@ -386,13 +388,12 @@ function BestOffer({
       onClick={onClick}
       className="flex w-full items-center gap-3 border-t px-3.5 py-3 text-left hover:bg-muted/50"
     >
-      <AirlineLogo
-        code={o.segments[0]?.operatingCarrier ?? "?"}
-        className="size-8"
-      />
+      <AirlineLogo code={logoCarrier(o)} className="size-8" />
       <span className="flex min-w-0 flex-1 flex-col">
         <span className="tabular font-medium text-sm">
-          {localTime(o.departure)} – {localTime(o.arrival)}
+          {isDailyPrice(o)
+            ? `From ${formatDate(localDate(o.departure))}`
+            : `${localTime(o.departure)} – ${localTime(o.arrival)}`}
           {plus > 0 && <sup className="ml-0.5 text-dear">+{plus}</sup>}
           <span className="ml-2 rounded-full bg-brand/15 px-1.5 py-0.5 font-medium text-[10px] text-brand">
             Best

@@ -14,6 +14,10 @@ import (
 
 	"github.com/joakimcarlsson/flight-club/internal/award"
 	"github.com/joakimcarlsson/flight-club/internal/award/alaska"
+	"github.com/joakimcarlsson/flight-club/internal/award/jetblue"
+	"github.com/joakimcarlsson/flight-club/internal/award/sas"
+	"github.com/joakimcarlsson/flight-club/internal/award/virgin"
+	"github.com/joakimcarlsson/flight-club/internal/browser"
 	"github.com/joakimcarlsson/flight-club/internal/chat"
 	"github.com/joakimcarlsson/flight-club/internal/config"
 	"github.com/joakimcarlsson/flight-club/internal/httpx"
@@ -23,6 +27,12 @@ import (
 // programTimeout is the longest one loyalty program is waited on for one
 // search.
 const programTimeout = 30 * time.Second
+
+// newClient returns an HTTP client for one loyalty program, bounded by
+// programTimeout.
+func newClient() *http.Client {
+	return &http.Client{Timeout: programTimeout}
+}
 
 // version is the reported build version; override with -ldflags.
 var version = "dev"
@@ -68,11 +78,35 @@ func run() error {
 		return err
 	}
 
-	awards := award.NewSearcher(award.Paced{
-		Program:     alaska.New(&http.Client{Timeout: programTimeout}),
-		Concurrency: 2,
-		MinInterval: 500 * time.Millisecond,
-	})
+	programs := []award.Paced{
+		{
+			Program:     alaska.New(newClient()),
+			Concurrency: 2,
+			MinInterval: 500 * time.Millisecond,
+		},
+		{
+			Program:     sas.New(newClient()),
+			Concurrency: 2,
+			MinInterval: time.Second,
+		},
+		{
+			Program:     virgin.New(newClient()),
+			Concurrency: 2,
+			MinInterval: time.Second,
+		},
+	}
+	b, err := browser.New(browser.Options{Headless: true, Concurrency: 2})
+	if err != nil {
+		slog.WarnContext(ctx, "no browser, skipping jetblue", "error", err)
+	} else {
+		defer func() { _ = b.Close() }()
+		programs = append(programs, award.Paced{
+			Program:     jetblue.New(b),
+			Concurrency: 2,
+			MinInterval: 2 * time.Second,
+		})
+	}
+	awards := award.NewSearcher(programs...)
 	var assistant *chat.Assistant
 	if model != nil {
 		assistant = chat.New(model, awards)

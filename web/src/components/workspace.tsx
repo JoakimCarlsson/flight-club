@@ -21,8 +21,10 @@ import {
   formatPoints,
   formatPointsShort,
   formatRange,
+  isDailyPrice,
   localDate,
   localTime,
+  logoCarrier,
   offerKey,
   programName,
   type Ranking,
@@ -456,7 +458,7 @@ function DateStrip({
             <span className="text-muted-foreground text-xs">
               {formatDate(d)}
             </span>
-            {pending ? (
+            {price === undefined && pending ? (
               <span className="h-5 w-14 animate-pulse rounded bg-muted" />
             ) : price === undefined ? (
               <span className="text-muted-foreground text-sm">—</span>
@@ -520,37 +522,60 @@ function OfferRow({
         onClick={onToggle}
         className="grid w-full grid-cols-[auto_1fr_auto] items-center gap-5 px-2 py-4 text-left hover:bg-muted/40"
       >
-        <AirlineLogo code={o.segments[0]?.operatingCarrier ?? "?"} />
+        <AirlineLogo code={logoCarrier(o)} />
 
-        <div className="flex min-w-0 flex-col gap-1">
-          <div className="flex items-baseline gap-2">
-            <span className="tabular font-semibold text-lg tracking-tight">
-              {localTime(o.departure)} – {localTime(o.arrival)}
-            </span>
-            {plus > 0 && (
-              <span className="font-medium text-dear text-xs">+{plus}</span>
-            )}
-            {highlight && (
-              <span className="rounded-full bg-brand/15 px-2 py-0.5 font-medium text-brand text-xs">
-                {HIGHLIGHT[highlight]}
+        {isDailyPrice(o) ? (
+          <div className="flex min-w-0 flex-col gap-1">
+            <div className="flex items-baseline gap-2">
+              <span className="font-semibold text-lg tracking-tight">
+                Lowest price on {formatDate(localDate(o.departure))}
               </span>
-            )}
+              {highlight && (
+                <span className="rounded-full bg-brand/15 px-2 py-0.5 font-medium text-brand text-xs">
+                  {HIGHLIGHT[highlight]}
+                </span>
+              )}
+            </div>
+            <div className="truncate text-muted-foreground text-sm">
+              {programName(o.program)} · estimated · flight times on the
+              program's site
+            </div>
           </div>
-          <div className="truncate text-muted-foreground text-sm">
-            {o.airlines.map(airlineName).join(", ")} ·{" "}
-            {formatDate(localDate(o.departure))} ·{" "}
-            <span className="font-mono text-xs">
-              {o.segments.map((s) => s.flight).join(" ")}
-            </span>
+        ) : (
+          <div className="flex min-w-0 flex-col gap-1">
+            <div className="flex items-baseline gap-2">
+              <span className="tabular font-semibold text-lg tracking-tight">
+                {localTime(o.departure)} – {localTime(o.arrival)}
+              </span>
+              {plus > 0 && (
+                <span className="font-medium text-dear text-xs">+{plus}</span>
+              )}
+              {highlight && (
+                <span className="rounded-full bg-brand/15 px-2 py-0.5 font-medium text-brand text-xs">
+                  {HIGHLIGHT[highlight]}
+                </span>
+              )}
+            </div>
+            <div className="truncate text-muted-foreground text-sm">
+              {o.airlines.map(airlineName).join(", ")} ·{" "}
+              {formatDate(localDate(o.departure))} ·{" "}
+              <span className="font-mono text-xs">
+                {o.segments.map((s) => s.flight).join(" ")}
+              </span>
+            </div>
           </div>
-        </div>
+        )}
 
         <div className="flex items-center gap-8">
           <div className="hidden w-36 flex-col gap-1 md:flex">
-            <RouteLine offer={o} />
-            <span className="text-muted-foreground text-xs">
-              {formatDuration(o.durationMinutes)} · {describeStops(o)}
-            </span>
+            {!isDailyPrice(o) && (
+              <>
+                <RouteLine offer={o} />
+                <span className="text-muted-foreground text-xs">
+                  {formatDuration(o.durationMinutes)} · {describeStops(o)}
+                </span>
+              </>
+            )}
           </div>
           <span className="hidden w-20 text-muted-foreground text-sm capitalize lg:block">
             {o.cabin}
@@ -630,7 +655,13 @@ function OfferDetail({
 }) {
   return (
     <div className="grid gap-8 px-2 pt-2 pb-6 md:grid-cols-[1fr_260px]">
-      <ol className="flex flex-col">
+      {isDailyPrice(o) && (
+        <p className="text-muted-foreground text-sm">
+          {programName(o.program)} only publishes the lowest price per day and
+          cabin. Open it on the program's site to pick a flight.
+        </p>
+      )}
+      <ol className={cn("flex flex-col", isDailyPrice(o) && "hidden")}>
         {o.segments.map((s, i) => (
           <li key={s.flight + s.departure} className="flex flex-col">
             <div className="grid grid-cols-[3.5rem_1rem_1fr] gap-3">
