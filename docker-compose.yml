@@ -1,0 +1,11 @@
+services:
+  flightclub:
+    build: .
+    container_name: flightclub
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      FLIGHT_CLUB_ADDR: ":7080"
+    ports:
+      - "127.0.0.1:7080:7080"
+    shm_size: "512m"

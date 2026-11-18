@@ -1,0 +1,28 @@
+FROM oven/bun:1 AS web
+WORKDIR /src/web
+COPY web/package.json web/bun.lock ./
+RUN bun install --frozen-lockfile
+COPY web/ ./
+RUN bun run build
+
+FROM golang:1.27 AS api
+WORKDIR /src
+COPY go.mod go.sum ./
+RUN go mod download
+COPY . .
+COPY --from=web /src/web/dist ./web/dist
+RUN CGO_ENABLED=0 go build -trimpath -ldflags="-s -w" -o /out/api ./cmd/api
+
+FROM debian:bookworm-slim
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends chromium ca-certificates fonts-liberation \
+    && rm -rf /var/lib/apt/lists/* \
+    && useradd -m -u 10001 app
+COPY --from=api /out/api /usr/local/bin/api
+USER app
+WORKDIR /home/app
+ENV FLIGHT_CLUB_ADDR=:7080 \
+    FLIGHT_CLUB_CHROME_PATH=/usr/bin/chromium \
+    FLIGHT_CLUB_NO_SANDBOX=true
+EXPOSE 7080
+ENTRYPOINT ["/usr/local/bin/api"]

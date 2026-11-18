@@ -112,7 +112,12 @@ func run() error {
 			MinInterval: time.Second,
 		},
 	}
-	b, err := browser.New(browser.Options{Headless: true, Concurrency: 2})
+	b, err := browser.New(browser.Options{
+		Headless:    true,
+		Concurrency: 2,
+		ChromePath:  os.Getenv("FLIGHT_CLUB_CHROME_PATH"),
+		NoSandbox:   os.Getenv("FLIGHT_CLUB_NO_SANDBOX") == "true",
+	})
 	if err != nil {
 		slog.WarnContext(ctx, "no browser, skipping jetblue", "error", err)
 	} else {
