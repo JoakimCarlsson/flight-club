@@ -12,6 +12,10 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/joakimcarlsson/ai/llm"
+	llmopenai "github.com/joakimcarlsson/ai/llm/openai"
+	llmopenrouter "github.com/joakimcarlsson/ai/llm/openrouter"
+
 	"github.com/joakimcarlsson/flight-club/internal/award"
 	"github.com/joakimcarlsson/flight-club/internal/award/alaska"
 	"github.com/joakimcarlsson/flight-club/internal/award/jetblue"
@@ -21,7 +25,6 @@ import (
 	"github.com/joakimcarlsson/flight-club/internal/chat"
 	"github.com/joakimcarlsson/flight-club/internal/config"
 	"github.com/joakimcarlsson/flight-club/internal/httpx"
-	"github.com/joakimcarlsson/flight-club/internal/llmc"
 )
 
 // programTimeout is the longest one loyalty program is waited on for one
@@ -32,6 +35,31 @@ const programTimeout = 30 * time.Second
 // programTimeout.
 func newClient() *http.Client {
 	return &http.Client{Timeout: programTimeout}
+}
+
+// errLLMNotConfigured is returned by newLLM when no API key is set.
+var errLLMNotConfigured = errors.New("OPENROUTER_API_KEY is not set")
+
+// newLLM builds the OpenRouter client straight from the llm packages. It
+// returns errLLMNotConfigured when cfg has no API key, and an error when it
+// has no model or the model is not in the library's OpenRouter catalogue.
+func newLLM(cfg config.OpenRouter) (llm.LLM, error) {
+	if cfg.APIKey == "" {
+		return nil, errLLMNotConfigured
+	}
+	if cfg.Model == "" {
+		return nil, errors.New("OPENROUTER_MODEL is not set")
+	}
+	for _, m := range llmopenrouter.Models {
+		if m.APIModel == cfg.Model {
+			return llmopenrouter.NewLLM(
+				llmopenai.WithAPIKey(cfg.APIKey),
+				llmopenai.WithModel(m),
+				llmopenai.WithTimeout(2*time.Minute),
+			), nil
+		}
+	}
+	return nil, fmt.Errorf("OPENROUTER_MODEL %q is not in the OpenRouter catalogue", cfg.Model)
 }
 
 // version is the reported build version; override with -ldflags.
@@ -67,17 +95,6 @@ func run() error {
 	)
 	defer stop()
 
-	model, err := llmc.New(llmc.Config{
-		APIKey: cfg.OpenRouter.APIKey,
-		Model:  cfg.OpenRouter.Model,
-	})
-	switch {
-	case errors.Is(err, llmc.ErrNotConfigured):
-		slog.WarnContext(ctx, "no LLM client", "reason", err)
-	case err != nil:
-		return err
-	}
-
 	programs := []award.Paced{
 		{
 			Program:     alaska.New(newClient()),
@@ -108,7 +125,13 @@ func run() error {
 	}
 	awards := award.NewSearcher(programs...)
 	var assistant *chat.Assistant
-	if model != nil {
+	model, err := newLLM(cfg.OpenRouter)
+	switch {
+	case errors.Is(err, errLLMNotConfigured):
+		slog.WarnContext(ctx, "no LLM client", "reason", err)
+	case err != nil:
+		return err
+	default:
 		assistant = chat.New(model, awards)
 	}
 	srv := httpx.New(
