@@ -14,6 +14,7 @@ import (
 
 	"github.com/joakimcarlsson/flight-club/internal/award"
 	"github.com/joakimcarlsson/flight-club/internal/award/alaska"
+	"github.com/joakimcarlsson/flight-club/internal/chat"
 	"github.com/joakimcarlsson/flight-club/internal/config"
 	"github.com/joakimcarlsson/flight-club/internal/httpx"
 	"github.com/joakimcarlsson/flight-club/internal/llmc"
@@ -72,9 +73,13 @@ func run() error {
 		Concurrency: 2,
 		MinInterval: 500 * time.Millisecond,
 	})
+	var assistant *chat.Assistant
+	if model != nil {
+		assistant = chat.New(model, awards)
+	}
 	srv := httpx.New(
 		httpx.Config{Addr: cfg.Addr, Version: version},
-		httpx.Deps{Awards: awards, LLM: model},
+		httpx.Deps{Awards: awards, Chat: assistant},
 	)
 	return srv.Start(ctx)
 }

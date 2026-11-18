@@ -352,6 +352,34 @@ func (s *Searcher) Keys() []string {
 	return keys
 }
 
+// Step is one program-direction-day of a search as it starts or finishes.
+type Step struct {
+	// Program is the key of the program asked.
+	Program string `json:"program"`
+	// Direction is the leg asked about.
+	Direction Direction `json:"direction"`
+	// Date is the departure date asked about, YYYY-MM-DD.
+	Date string `json:"date"`
+	// State is "running", "done" or "failed".
+	State string `json:"state"`
+	// Offers is how many offers it found, once done.
+	Offers int `json:"offers"`
+	// Error says what went wrong, once failed.
+	Error string `json:"error,omitempty"`
+}
+
+// The states a step reports.
+const (
+	StepRunning = "running"
+	StepDone    = "done"
+	StepFailed  = "failed"
+)
+
+// Progress receives every step of a search as it starts and finishes. It is
+// called from many goroutines, one call at a time, and must not block for
+// long.
+type Progress func(Step)
+
 // job is one program asked about one direction on one day.
 type job struct {
 	program   *paced
@@ -362,9 +390,14 @@ type job struct {
 // Run asks the programs search names, or every program, about every day of
 // every direction of search, in parallel within each program's pacing. A
 // program-day that fails is reported in the result's Errors rather than
-// failing the search. It returns an error wrapping ErrInvalidSearch when
-// search is invalid or names a program that does not exist.
-func (s *Searcher) Run(ctx context.Context, search Search) (Result, error) {
+// failing the search. Every step is reported to progress, which may be nil.
+// It returns an error wrapping ErrInvalidSearch when search is invalid or
+// names a program that does not exist.
+func (s *Searcher) Run(
+	ctx context.Context,
+	search Search,
+	progress Progress,
+) (Result, error) {
 	if err := search.Validate(); err != nil {
 		return Result{}, err
 	}
@@ -382,9 +415,31 @@ func (s *Searcher) Run(ctx context.Context, search Search) (Result, error) {
 		wg  sync.WaitGroup
 		res = Result{Offers: []Offer{}, Errors: []ProgramError{}}
 	)
+	report := func(Step) {}
+	if progress != nil {
+		report = func(st Step) {
+			mu.Lock()
+			defer mu.Unlock()
+			progress(st)
+		}
+	}
+	for _, j := range jobs {
+		report(j.step(StepRunning, 0, nil))
+	}
 	for _, j := range jobs {
 		wg.Go(func() {
 			offers, err := j.program.search(ctx, j.query)
+			kept := 0
+			for _, o := range offers {
+				if wanted(o, search.Cabins) {
+					kept++
+				}
+			}
+			if err != nil {
+				report(j.step(StepFailed, 0, err))
+			} else {
+				report(j.step(StepDone, kept, nil))
+			}
 			mu.Lock()
 			defer mu.Unlock()
 			if err != nil {
@@ -414,6 +469,21 @@ func (s *Searcher) Run(ctx context.Context, search Search) (Result, error) {
 		)
 	})
 	return res, nil
+}
+
+// step describes j in state with offers found and err, which may be nil.
+func (j job) step(state string, offers int, err error) Step {
+	st := Step{
+		Program:   j.program.program.Key(),
+		Direction: j.direction,
+		Date:      j.query.Date.Format(time.DateOnly),
+		State:     state,
+		Offers:    offers,
+	}
+	if err != nil {
+		st.Error = err.Error()
+	}
+	return st
 }
 
 // jobs lists every program-direction-day search asks for. It returns an

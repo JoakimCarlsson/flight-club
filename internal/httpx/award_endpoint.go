@@ -62,7 +62,7 @@ func (s *Server) searchAwards(c *router.Context, p awardSearchParams) {
 		c.JSON(http.StatusBadRequest, router.BadRequest(err.Error()))
 		return
 	}
-	res, err := s.awards.Run(c.Ctx(), search)
+	res, err := s.awards.Run(c.Ctx(), search, nil)
 	if errors.Is(err, award.ErrInvalidSearch) {
 		c.JSON(http.StatusBadRequest, router.BadRequest(err.Error()))
 		return

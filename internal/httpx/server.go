@@ -6,8 +6,8 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/joakimcarlsson/ai/llm"
 	"github.com/joakimcarlsson/flight-club/internal/award"
+	"github.com/joakimcarlsson/flight-club/internal/chat"
 	"github.com/joakimcarlsson/flight-club/internal/config"
 	"github.com/joakimcarlsson/minmux/openapi"
 	"github.com/joakimcarlsson/minmux/outputcache"
@@ -36,8 +36,8 @@ type Config struct {
 type Deps struct {
 	// Awards searches the loyalty programs.
 	Awards *award.Searcher
-	// LLM is the language model client, nil when none is configured.
-	LLM llm.LLM
+	// Chat is the award assistant, nil when no LLM is configured.
+	Chat *chat.Assistant
 }
 
 // Server owns the minmux router and the underlying http.Server.
@@ -52,8 +52,8 @@ type Server struct {
 	cache *outputcache.Cache
 	// awards searches the loyalty programs.
 	awards *award.Searcher
-	// llm is the language model client, nil when none is configured.
-	llm llm.LLM
+	// chat is the award assistant, nil when no LLM is configured.
+	chat *chat.Assistant
 }
 
 // New constructs a Server from cfg and deps with all routes registered.
@@ -63,7 +63,7 @@ func New(cfg Config, deps Deps) *Server {
 		version: cfg.Version,
 		router:  router.New(),
 		awards:  deps.Awards,
-		llm:     deps.LLM,
+		chat:    deps.Chat,
 	}
 	s.docs = openapi.NewGenerator(openapi.Info{
 		Title:   "Flight Club",
@@ -84,6 +84,7 @@ func New(cfg Config, deps Deps) *Server {
 func (s *Server) routes() {
 	s.registerHealth()
 	s.registerAwards()
+	s.registerChat()
 	s.registerDocs()
 	s.registerSPA()
 }
