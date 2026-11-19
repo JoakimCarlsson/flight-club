@@ -43,6 +43,7 @@ const AIRLINES: Record<string, string> = {
 /** Display names of the loyalty programs, by key. */
 const PROGRAMS: Record<string, string> = {
   alaska: "Alaska Atmos",
+  aeroplan: "Air Canada Aeroplan",
   sas: "SAS EuroBonus",
   virgin: "Virgin Flying Club",
   jetblue: "JetBlue TrueBlue",
@@ -66,6 +67,7 @@ const PROGRAMS: Record<string, string> = {
 /** The airline that runs each loyalty program, by program key. */
 const PROGRAM_AIRLINES: Record<string, string> = {
   alaska: "AS",
+  aeroplan: "AC",
   sas: "SK",
   virgin: "VS",
   jetblue: "B6",

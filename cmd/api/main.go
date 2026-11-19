@@ -1,7 +1,14 @@
 // Command api serves the flight-club API.
+//
+// Run as "api aeroplan-login" it instead signs the Aeroplan member of
+// AEROPLAN_EMAIL and AEROPLAN_PASSWORD in once, asking at the terminal for
+// the code aircanada.com emails, and saves the session the Aeroplan
+// program searches with to AEROPLAN_SESSION_FILE. Set
+// AEROPLAN_LOGIN_HEADFUL=true to watch the browser while it does.
 package main
 
 import (
+	"bufio"
 	"context"
 	"errors"
 	"fmt"
@@ -17,6 +24,7 @@ import (
 	llmopenrouter "github.com/joakimcarlsson/ai/llm/openrouter"
 
 	"github.com/joakimcarlsson/flight-club/internal/award"
+	"github.com/joakimcarlsson/flight-club/internal/award/aeroplan"
 	"github.com/joakimcarlsson/flight-club/internal/award/airchina"
 	"github.com/joakimcarlsson/flight-club/internal/award/alaska"
 	"github.com/joakimcarlsson/flight-club/internal/award/american"
@@ -80,12 +88,65 @@ func newLLM(cfg config.OpenRouter) (llm.LLM, error) {
 // version is the reported build version; override with -ldflags.
 var version = "dev"
 
-// main runs the API and exits with status 1 if it fails.
+// main runs the API, or the Aeroplan sign-in when its first argument is
+// aeroplan-login, and exits with status 1 if it fails.
 func main() {
-	if err := run(); err != nil {
-		slog.Error("api failed", "error", err)
+	runner, name := run, "api"
+	if len(os.Args) > 1 && os.Args[1] == "aeroplan-login" {
+		runner, name = aeroplanLogin, "aeroplan-login"
+	}
+	if err := runner(); err != nil {
+		slog.Error(name+" failed", "error", err)
 		os.Exit(1)
 	}
+}
+
+// aeroplanLogin signs the configured Aeroplan member in through a browser,
+// reading the emailed verification code from standard input when the site
+// asks for one, and saves the session. It returns an error when no member
+// is configured, the browser cannot start or the sign-in fails.
+func aeroplanLogin() error {
+	if _, err := config.Load(); err != nil {
+		return err
+	}
+	account, ok := aeroplan.AccountFromEnv()
+	if !ok {
+		return errors.New("AEROPLAN_EMAIL and AEROPLAN_PASSWORD must be set")
+	}
+	b, err := browser.New(browser.Options{
+		Headless:   os.Getenv("AEROPLAN_LOGIN_HEADFUL") != "true",
+		ChromePath: os.Getenv("FLIGHT_CLUB_CHROME_PATH"),
+		NoSandbox:  os.Getenv("FLIGHT_CLUB_NO_SANDBOX") == "true",
+	})
+	if err != nil {
+		return err
+	}
+	defer func() { _ = b.Close() }()
+	ctx, stop := signal.NotifyContext(
+		context.Background(),
+		syscall.SIGINT,
+		syscall.SIGTERM,
+	)
+	defer stop()
+	fmt.Println("signing in to Aeroplan as", account.Email)
+	path, err := aeroplan.New(b, account).SignIn(ctx, readCode)
+	if err != nil {
+		return err
+	}
+	fmt.Println("signed in; session saved to", path)
+	return nil
+}
+
+// readCode asks at the terminal for the verification code aircanada.com
+// emailed and returns the line typed. It returns an error when standard
+// input ends before a line is read.
+func readCode(context.Context) (string, error) {
+	fmt.Print("verification code from the email: ")
+	line, err := bufio.NewReader(os.Stdin).ReadString('\n')
+	if err != nil && line == "" {
+		return "", err
+	}
+	return line, nil
 }
 
 // run loads the configuration and serves HTTP until SIGINT or SIGTERM. It
@@ -172,6 +233,12 @@ func run() error {
 			browserProgram(frontier.New(b), 1, 10*time.Second),
 			browserProgram(american.New(b), 1, 30*time.Second),
 		)
+		if account, ok := aeroplan.AccountFromEnv(); ok {
+			programs = append(programs, browserProgram(
+				aeroplan.New(b, account), 1, 30*time.Second))
+		} else {
+			slog.InfoContext(ctx, "no Aeroplan account, skipping aeroplan")
+		}
 	}
 	awards := award.NewSearcher(programs...)
 	var assistant *chat.Assistant

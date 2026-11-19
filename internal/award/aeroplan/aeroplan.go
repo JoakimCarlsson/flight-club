@@ -8,7 +8,10 @@
 // the page's Angular application calls the air-bounds API itself, and that
 // JSON answer is captured as the page loads it. Since March 2025 the site
 // only shows award availability to a signed-in Aeroplan member and sends
-// anyone else to its sign-in page, which Search reports as an error.
+// anyone else to its sign-in page. Search therefore carries a saved
+// session's cookies into the browser and, when the site still asks to sign
+// in, signs in with the member's email and password on that page; see
+// session.go for how the session is kept.
 //
 // The answer lists air bound groups, one per itinerary, each with its air
 // bounds, one per fare family (Standard, Flex, Comfort, Latitude and so on)
@@ -73,26 +76,26 @@ var errBlocked = errors.New(
 	"aeroplan: access denied by the site's bot protection",
 )
 
-// loginPath is the part of the sign-in page's URL the results page sends
+// loginPath is the part of the sign-in pages' URLs the results page sends
 // a visitor to when no Aeroplan member is signed in.
-const loginPath = "/clogin/pages/login"
+const loginPath = "/clogin/"
 
-// errLoginRequired is returned when the results page sends the browser to
-// the sign-in page: aircanada.com has only shown award availability to
-// signed-in Aeroplan members since March 2025.
-var errLoginRequired = errors.New(
-	"aeroplan: aircanada.com requires a signed-in Aeroplan member to " +
-		"search awards",
-)
-
-// Program searches aircanada.com through a stealth browser.
+// Program searches aircanada.com through a stealth browser, signed in as
+// one Aeroplan member.
 type Program struct {
 	browser *browser.Browser
+	account Account
+	session *session
 }
 
-// New builds a Program that loads aircanada.com in b.
-func New(b *browser.Browser) *Program {
-	return &Program{browser: b}
+// New builds a Program that loads aircanada.com in b, signed in as
+// account, keeping its session in account.SessionFile.
+func New(b *browser.Browser, account Account) *Program {
+	return &Program{
+		browser: b,
+		account: account,
+		session: &session{path: account.sessionPath()},
+	}
 }
 
 // Key returns the program key, "aeroplan".
@@ -102,18 +105,23 @@ func (p *Program) Key() string {
 
 // Search returns Aeroplan's award offers for q, one per fare family of
 // every itinerary. It returns an error when the browser cannot load the
-// results page, the page is denied by the bot protection, or the API
-// answers with something that cannot be read or reports a failure other
-// than no flights. A day without award flights gives no offers and no
-// error.
+// results page, the page is denied by the bot protection, the member
+// cannot be signed in without help (errSignInNeeded, returned at once
+// from then on until the session file changes), or the API answers with
+// something that cannot be read or reports a failure other than no
+// flights. A day without award flights gives no offers and no error.
 func (p *Program) Search(
 	ctx context.Context,
 	q award.Query,
 ) ([]award.Offer, error) {
+	if p.session.isStuck() {
+		return nil, errSignInNeeded
+	}
 	booking := bookingURL(q)
 	captured, err := p.browser.Collect(ctx, booking, browser.CollectOpts{
 		Timeout:     loadTimeout,
 		WarmUp:      homeURL,
+		Cookies:     p.session.load(),
 		Scrolls:     settleRounds,
 		ScrollDelay: settleDelay,
 		Accept:      func(string, string) bool { return false },
@@ -121,9 +129,15 @@ func (p *Program) Search(
 			return strings.Contains(u, apiHost) &&
 				strings.Contains(strings.ToLower(ct), "json")
 		},
+		Interact: func(ctx context.Context, page *browser.Page) error {
+			return signInIfAsked(ctx, page, p.account, nil)
+		},
 	})
+	if errors.Is(err, errSignInNeeded) {
+		p.session.markStuck()
+	}
 	if err != nil {
-		return nil, fmt.Errorf("aeroplan: %w", err)
+		return nil, err
 	}
 	var bodies [][]byte
 	for _, b := range captured.Bodies {
@@ -135,13 +149,15 @@ func (p *Program) Search(
 	}
 	if !found {
 		if strings.Contains(captured.URL, loginPath) {
-			return nil, errLoginRequired
+			p.session.markStuck()
+			return nil, errSignInNeeded
 		}
 		if strings.Contains(captured.HTML, "Access Denied") {
 			return nil, errBlocked
 		}
 		return nil, errors.New("aeroplan: no availability answer captured")
 	}
+	_ = p.session.save(captured.Cookies)
 	return offers(a, q.Passengers, booking), nil
 }
 
@@ -269,45 +285,59 @@ type availability struct {
 	BookingClass string `json:"bookingClass"`
 	// Quota is how many seats are left, nil when not said.
 	Quota *int `json:"quota"`
-	// MileagePercentage is the share of the distance flown in Cabin.
-	MileagePercentage *int `json:"mileagePercentage"`
+	// MileagePercentage is the share of the distance flown in Cabin, as a
+	// percentage such as 93.75.
+	MileagePercentage *float64 `json:"mileagePercentage"`
 }
 
-// prices are a fare's points and cash prices.
+// prices are a fare's points and cash prices. The points price is the
+// base of the miles conversion; its total also converts the taxes into
+// points, which are instead read in cash from the cash prices.
 type prices struct {
+	// UnitPrices are the prices per passenger type.
+	UnitPrices []unitPrice `json:"unitPrices"`
+	// TotalPrices are the cash prices for every passenger.
+	TotalPrices []cashPrice `json:"totalPrices"`
 	// MilesConversion is the price for every passenger.
 	MilesConversion milesConversion `json:"milesConversion"`
-	// ConvertedMiles is the points price for every passenger, as some
-	// answers put it.
-	ConvertedMiles *miles `json:"convertedMiles"`
-	// UnitPrices are the prices per passenger type.
-	UnitPrices []struct {
-		// TravelerIDs are the passengers this price is for.
-		TravelerIDs []string `json:"travelerIds"`
-		// MilesConversion is the price for one such passenger.
-		MilesConversion milesConversion `json:"milesConversion"`
-	} `json:"unitPrices"`
+}
+
+// unitPrice is the price for the passengers of one type, each.
+type unitPrice struct {
+	// TravelerIDs are the passengers this price is for.
+	TravelerIDs []string `json:"travelerIds"`
+	// Prices are the cash prices for one such passenger.
+	Prices []cashPrice `json:"prices"`
+	// MilesConversion is the price for one such passenger.
+	MilesConversion milesConversion `json:"milesConversion"`
+}
+
+// cashPrice is a price in cash, in the currency's minor unit.
+type cashPrice struct {
+	// Total is the whole cash price.
+	Total int64 `json:"total"`
+	// TotalTaxes is the taxes, fees and carrier charges.
+	TotalTaxes int64 `json:"totalTaxes"`
+	// CurrencyCode is the ISO 4217 code.
+	CurrencyCode string `json:"currencyCode"`
 }
 
 // milesConversion is a price split into points and the cash left over.
 type milesConversion struct {
 	// ConvertedMiles is the points.
 	ConvertedMiles *miles `json:"convertedMiles"`
-	// RemainingNonConverted is the cash, in minor units.
-	RemainingNonConverted *struct {
-		// Total is the cash in the currency's minor unit.
-		Total int64 `json:"total"`
-		// CurrencyCode is the ISO 4217 code.
-		CurrencyCode string `json:"currencyCode"`
-	} `json:"remainingNonConverted"`
+	// RemainingNonConverted is the cash left over, in minor units.
+	RemainingNonConverted *cashPrice `json:"remainingNonConverted"`
 }
 
 // miles is a points amount.
 type miles struct {
-	// Base is the points price.
+	// Base is the points price of the fare.
 	Base int `json:"base"`
-	// Total is the points price including any points surcharge.
+	// Total is Base plus the taxes converted into points.
 	Total int `json:"total"`
+	// TotalTaxes is the taxes converted into points.
+	TotalTaxes int `json:"totalTaxes"`
 }
 
 // pickAnswer finds the air-bounds answer among the API bodies the page
@@ -607,50 +637,51 @@ func offer(
 
 // farePrice reads the points and taxes per passenger of p, preferring the
 // price of one passenger and else dividing the price of all passengers.
-// Cash amounts are converted from minor units with the currency's decimal
+// The points are the miles conversion's base, and the taxes the cash
+// prices' taxes, converted from minor units with the currency's decimal
 // places in d. It returns false when p has no points price.
 func farePrice(
 	p prices,
 	d dictionaries,
 	passengers int,
 ) (int, award.Money, bool) {
-	conv := p.MilesConversion
-	divide := passengers
+	conv, cash, divide := p.MilesConversion, p.TotalPrices, passengers
 	if len(p.UnitPrices) > 0 &&
 		p.UnitPrices[0].MilesConversion.ConvertedMiles != nil {
-		conv = p.UnitPrices[0].MilesConversion
-		divide = 1
+		conv, cash, divide = p.UnitPrices[0].MilesConversion,
+			p.UnitPrices[0].Prices, 1
 	}
 	m := conv.ConvertedMiles
-	if m == nil {
-		m = p.ConvertedMiles
-		divide = passengers
-	}
 	if m == nil {
 		return 0, award.Money{}, false
 	}
 	points := m.Base
-	if m.Total > points {
-		points = m.Total
+	if points <= 0 {
+		points = m.Total - m.TotalTaxes
 	}
 	if points <= 0 {
 		return 0, award.Money{}, false
 	}
 	points /= divide
-	taxes := award.Money{Currency: "CAD"}
-	if r := conv.RemainingNonConverted; r != nil {
-		code := r.CurrencyCode
-		if code == "" {
-			code = "CAD"
-		}
-		places := 2
-		if c, ok := d.Currency[code]; ok && c.DecimalPlaces != nil {
-			places = *c.DecimalPlaces
-		}
-		amount := float64(r.Total) / math.Pow10(places) / float64(divide)
-		taxes = award.Money{Amount: roundCents(amount), Currency: code}
+	var minor int64
+	code := ""
+	switch {
+	case len(cash) > 0:
+		minor, code = cash[0].TotalTaxes, cash[0].CurrencyCode
+	case conv.RemainingNonConverted != nil:
+		r := conv.RemainingNonConverted
+		minor, code = r.Total, r.CurrencyCode
 	}
-	return points, taxes, true
+	if code == "" {
+		code = "CAD"
+	}
+	places := 2
+	if c, ok := d.Currency[code]; ok && c.DecimalPlaces != nil {
+		places = *c.DecimalPlaces
+	}
+	amount := float64(minor) / math.Pow10(places) / float64(divide)
+	return points, award.Money{Amount: roundCents(amount), Currency: code},
+		true
 }
 
 // roundCents rounds v to two decimals.
@@ -659,22 +690,28 @@ func roundCents(v float64) float64 {
 }
 
 // notes are what the answer says about a fare beyond its price: partner
-// flights, the share of a mixed-cabin fare flown in its cabin and whether
-// it is the itinerary's cheapest fare.
+// flights, the share of the distance a mixed-cabin fare flies in its
+// cabin and whether it is the itinerary's cheapest fare.
 func notes(segs []award.Segment, b airBound, cabin award.Cabin) []string {
 	var out []string
+	mixed := false
 	for _, s := range segs {
 		if s.OperatingCarrier != s.MarketingCarrier {
 			out = append(out, s.Flight+" operated by "+s.OperatingCarrier)
 		}
-	}
-	for _, a := range b.AvailabilityDetails {
-		if a.MileagePercentage != nil && *a.MileagePercentage < 100 &&
-			cabinOf(a.Cabin) == cabin {
-			out = append(out, fmt.Sprintf("%d%% of the distance in %s",
-				*a.MileagePercentage, cabin))
-			break
+		if s.Cabin != cabin {
+			mixed = true
 		}
+	}
+	share := 0.0
+	for _, a := range b.AvailabilityDetails {
+		if a.MileagePercentage != nil && cabinOf(a.Cabin) == cabin {
+			share += *a.MileagePercentage
+		}
+	}
+	if mixed && share > 0 && share < 100 {
+		out = append(out, fmt.Sprintf("%.0f%% of the distance in %s",
+			share, cabin))
 	}
 	if b.IsCheapestOffer {
 		out = append(out, "Cheapest fare of this itinerary")

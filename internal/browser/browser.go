@@ -115,7 +115,18 @@ type Captured struct {
 	URL       string
 	Resources []Resource
 	Bodies    []Body
+	// Cookies are the cookies of the context once the page has settled,
+	// such as a session a sign-in made, to be given back as
+	// CollectOpts.Cookies later. Nil when they could not be read.
+	Cookies []Cookie
 }
+
+// Cookie is a browser cookie, as read from and set into a context. It
+// marshals to JSON, so a session can be kept in a file.
+type Cookie = bonk.Cookie
+
+// Page is the page a Collect drives, handed to CollectOpts.Interact.
+type Page = bonk.Page
 
 // CollectOpts tunes a single Collect.
 type CollectOpts struct {
@@ -145,6 +156,14 @@ type CollectOpts struct {
 	// own form would store for its results page. Empty skips it; it is
 	// ignored without WarmUp.
 	Prepare string
+	// Cookies are set into the fresh context before anything is opened,
+	// such as a saved signed-in session. Empty sets none.
+	Cookies []Cookie
+	// Interact runs on the page once url has loaded, before the scrolls,
+	// with response capture already under way, such as to sign in on a
+	// page the site redirected to. An error from it ends the Collect with
+	// that error. Nil skips it.
+	Interact func(ctx context.Context, page *Page) error
 }
 
 // Collect navigates url in an isolated context, optionally scrolling to trigger
@@ -182,6 +201,12 @@ func (b *Browser) Collect(
 	}
 	defer func() { _ = page.Close() }()
 	page = page.WithContext(ctx)
+
+	if len(opts.Cookies) > 0 {
+		if err := bctx.SetCookies(opts.Cookies...); err != nil {
+			return Captured{}, fmt.Errorf("browser: set cookies: %w", err)
+		}
+	}
 
 	if err := warmUp(ctx, page, opts); err != nil {
 		return Captured{}, err
@@ -231,6 +256,12 @@ func (b *Browser) Collect(
 		return Captured{}, fmt.Errorf("browser: navigate %s: %w", url, err)
 	}
 
+	if opts.Interact != nil {
+		if err := opts.Interact(ctx, page); err != nil {
+			return Captured{}, err
+		}
+	}
+
 	delay := opts.ScrollDelay
 	if delay <= 0 {
 		delay = time.Second
@@ -258,12 +289,18 @@ func (b *Browser) Collect(
 		final = ""
 	}
 
+	cookies, err := bctx.Cookies()
+	if err != nil {
+		cookies = nil
+	}
+
 	mu.Lock()
 	out := Captured{
 		HTML:      html,
 		URL:       final,
 		Resources: append([]Resource(nil), resources...),
 		Bodies:    append([]Body(nil), bodies...),
+		Cookies:   cookies,
 	}
 	mu.Unlock()
 	return out, nil

@@ -19,12 +19,16 @@ RUN apt-get update \
     && curl -fsSLo /chrome.deb https://dl.google.com/linux/direct/google-chrome-stable_current_amd64.deb \
     && apt-get install -y --no-install-recommends /chrome.deb \
     && rm -rf /chrome.deb /var/lib/apt/lists/* \
-    && useradd -m -u 10001 app
+    && useradd -m -u 10001 app \
+    && mkdir -p /data \
+    && chown app:app /data
 COPY --from=api /out/api /usr/local/bin/api
 USER app
 WORKDIR /home/app
 ENV FLIGHT_CLUB_ADDR=:7080 \
     FLIGHT_CLUB_CHROME_PATH=/usr/bin/google-chrome \
-    FLIGHT_CLUB_NO_SANDBOX=true
+    FLIGHT_CLUB_NO_SANDBOX=true \
+    AEROPLAN_SESSION_FILE=/data/aeroplan-session.json
+VOLUME /data
 EXPOSE 7080
 ENTRYPOINT ["/usr/local/bin/api"]
