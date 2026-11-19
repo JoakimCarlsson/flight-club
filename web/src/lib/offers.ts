@@ -30,6 +30,11 @@ const AIRLINES: Record<string, string> = {
   B6: "JetBlue",
   X1: "SAS Connect",
   KL: "KLM",
+  CM: "Copa",
+  LH: "Lufthansa",
+  VA: "Virgin Australia",
+  EY: "Etihad",
+  WN: "Southwest",
 };
 
 /** Display names of the loyalty programs, by key. */
@@ -41,6 +46,14 @@ const PROGRAMS: Record<string, string> = {
   delta: "Delta SkyMiles",
   ana: "ANA Mileage Club",
   cathay: "Cathay Asia Miles",
+  southwest: "Southwest Rapid Rewards",
+  turkish: "Turkish Miles&Smiles",
+  etihad: "Etihad Guest",
+  qantas: "Qantas Frequent Flyer",
+  velocity: "Virgin Australia Velocity",
+  lufthansa: "Lufthansa Miles & More",
+  korean: "Korean Air SKYPASS",
+  copa: "Copa ConnectMiles",
 };
 
 /** The airline that runs each loyalty program, by program key. */
@@ -52,6 +65,14 @@ const PROGRAM_AIRLINES: Record<string, string> = {
   delta: "DL",
   ana: "NH",
   cathay: "CX",
+  southwest: "WN",
+  turkish: "TK",
+  etihad: "EY",
+  qantas: "QF",
+  velocity: "VA",
+  lufthansa: "LH",
+  korean: "KE",
+  copa: "CM",
 };
 
 /**
