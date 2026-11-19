@@ -28,7 +28,11 @@ WORKDIR /home/app
 ENV FLIGHT_CLUB_ADDR=:7080 \
     FLIGHT_CLUB_CHROME_PATH=/usr/bin/google-chrome \
     FLIGHT_CLUB_NO_SANDBOX=true \
-    AEROPLAN_SESSION_FILE=/data/aeroplan-session.json
+    AEROPLAN_SESSION_FILE=/data/aeroplan-session.json \
+    UNITED_SESSION_FILE=/data/united-session.json \
+    QATAR_SESSION_FILE=/data/qatar-session.json \
+    EMIRATES_SESSION_FILE=/data/emirates-session.json \
+    BA_SESSION_FILE=/data/britishairways-session.json
 VOLUME /data
 EXPOSE 7080
 ENTRYPOINT ["/usr/local/bin/api"]

@@ -30,7 +30,7 @@ func (b *Browser) Render(
 	}
 	defer func() { <-b.sem }()
 
-	bctx, err := b.b.NewContext()
+	bctx, err := b.newContext()
 	if err != nil {
 		return "", fmt.Errorf("browser: new context: %w", err)
 	}

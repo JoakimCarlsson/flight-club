@@ -35,60 +35,121 @@ type Options struct {
 
 // Browser is a launched Chrome instance that hands out isolated scrape jobs. It
 // is safe for concurrent use; Collect calls are bounded by Options.Concurrency.
+// When Chrome dies it is launched again on the next job.
 type Browser struct {
-	b       *bonk.Browser
+	opts    Options
 	sem     chan struct{}
+	mu      sync.Mutex
+	b       *bonk.Browser
 	profile string
 }
 
 // New launches Chrome via bonk with stealth enabled. It returns an error rather
 // than panicking when the browser cannot start (e.g. Chrome is missing).
 func New(opts Options) (*Browser, error) {
-	cache, err := os.UserCacheDir()
-	if err != nil {
-		return nil, fmt.Errorf("browser: cache directory: %w", err)
-	}
-	root := filepath.Join(cache, "flight-club", "browser")
-	if err := os.MkdirAll(root, 0700); err != nil {
-		return nil, err
-	}
-	profile, err := os.MkdirTemp(root, "chrome-")
+	b, profile, err := launch(opts)
 	if err != nil {
 		return nil, err
-	}
-	launch := []bonk.LaunchOption{
-		bonk.UserDataDir(profile),
-		bonk.Stealth(true),
-		bonk.Headless(opts.Headless),
-	}
-	if opts.ChromePath != "" {
-		launch = append(launch, bonk.ChromePath(opts.ChromePath))
-	}
-	if opts.NoSandbox {
-		launch = append(
-			launch,
-			bonk.Args("--no-sandbox", "--disable-dev-shm-usage"),
-		)
-	}
-	b, err := bonk.Launch(launch...)
-	if opts.ChromePath == "" && errors.Is(err, bonk.ErrChromeNotFound) {
-		if cached := cachedChromium(cache); cached != "" {
-			b, err = bonk.Launch(append(launch, bonk.ChromePath(cached))...)
-		}
-	}
-	if err != nil {
-		_ = os.RemoveAll(profile)
-		return nil, fmt.Errorf("browser: launch: %w", err)
 	}
 	n := opts.Concurrency
 	if n < 1 {
 		n = 2
 	}
-	return &Browser{b: b, sem: make(chan struct{}, n), profile: profile}, nil
+	return &Browser{
+		opts:    opts,
+		sem:     make(chan struct{}, n),
+		b:       b,
+		profile: profile,
+	}, nil
+}
+
+// launch starts Chrome for opts in a fresh profile directory and returns
+// it with that directory. It returns an error when Chrome cannot start.
+func launch(opts Options) (*bonk.Browser, string, error) {
+	cache, err := os.UserCacheDir()
+	if err != nil {
+		return nil, "", fmt.Errorf("browser: cache directory: %w", err)
+	}
+	root := filepath.Join(cache, "flight-club", "browser")
+	if err := os.MkdirAll(root, 0700); err != nil {
+		return nil, "", err
+	}
+	profile, err := os.MkdirTemp(root, "chrome-")
+	if err != nil {
+		return nil, "", err
+	}
+	args := []bonk.LaunchOption{
+		bonk.UserDataDir(profile),
+		bonk.Stealth(true),
+		bonk.Headless(opts.Headless),
+	}
+	if opts.ChromePath != "" {
+		args = append(args, bonk.ChromePath(opts.ChromePath))
+	}
+	if opts.NoSandbox {
+		args = append(
+			args,
+			bonk.Args("--no-sandbox", "--disable-dev-shm-usage"),
+		)
+	}
+	b, err := bonk.Launch(args...)
+	if opts.ChromePath == "" && errors.Is(err, bonk.ErrChromeNotFound) {
+		if cached := cachedChromium(cache); cached != "" {
+			b, err = bonk.Launch(append(args, bonk.ChromePath(cached))...)
+		}
+	}
+	if err != nil {
+		_ = os.RemoveAll(profile)
+		return nil, "", fmt.Errorf("browser: launch: %w", err)
+	}
+	return b, profile, nil
+}
+
+// newContext opens an isolated context, launching Chrome again once when
+// the running one no longer answers. It returns an error when no context
+// can be opened.
+func (b *Browser) newContext(
+	opts ...bonk.ContextOption,
+) (*bonk.BrowserContext, error) {
+	b.mu.Lock()
+	current := b.b
+	b.mu.Unlock()
+	bctx, err := current.NewContext(opts...)
+	if err == nil {
+		return bctx, nil
+	}
+	if err := b.relaunch(current); err != nil {
+		return nil, err
+	}
+	b.mu.Lock()
+	current = b.b
+	b.mu.Unlock()
+	return current.NewContext(opts...)
+}
+
+// relaunch replaces dead, the Chrome that failed, with a new one, unless
+// another job already replaced it. It returns an error when Chrome cannot
+// start again.
+func (b *Browser) relaunch(dead *bonk.Browser) error {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	if b.b != dead {
+		return nil
+	}
+	fresh, profile, err := launch(b.opts)
+	if err != nil {
+		return err
+	}
+	_ = dead.Close()
+	_ = os.RemoveAll(b.profile)
+	b.b, b.profile = fresh, profile
+	return nil
 }
 
 // Close shuts down the browser.
 func (b *Browser) Close() error {
+	b.mu.Lock()
+	defer b.mu.Unlock()
 	err := b.b.Close()
 	_ = os.RemoveAll(b.profile)
 	return err
@@ -189,7 +250,7 @@ func (b *Browser) Collect(
 	if opts.UserAgent != "" {
 		ctxOpts = append(ctxOpts, bonk.WithUserAgent(opts.UserAgent))
 	}
-	bctx, err := b.b.NewContext(ctxOpts...)
+	bctx, err := b.newContext(ctxOpts...)
 	if err != nil {
 		return Captured{}, fmt.Errorf("browser: new context: %w", err)
 	}
