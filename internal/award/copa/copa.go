@@ -125,7 +125,7 @@ func fromBodies(
 			continue
 		}
 		if trimmed[0] != '[' {
-			if noFlights(trimmed) {
+			if noFlights(trimmed) || unservedRoute(trimmed) {
 				parsed = true
 				continue
 			}
@@ -202,4 +202,10 @@ func bookingURL(q award.Query) string {
 	v.Set("isMiles", "true")
 	v.Set("langid", "en")
 	return shoppingURL + "?" + v.Encode()
+}
+
+// unservedRoute reports whether body is Copa's code 325 answer, which it
+// gives for a route it does not fly, so the search counts as no flights.
+func unservedRoute(body []byte) bool {
+	return bytes.Contains(body, []byte(`"code":"325"`))
 }

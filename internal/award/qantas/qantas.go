@@ -14,8 +14,8 @@
 // when its space was last seen, and the space is only certain once checked
 // on qantas.com. The answer is paged ten flights at a time and lists every
 // cabin a flight has space in, with the points, seats and taxes of one
-// passenger. Domestic Australian routes are not in the finder and give no
-// offers.
+// passenger. Domestic Australian routes are not in the finder, which
+// refuses them; such a search returns an error.
 package qantas
 
 import (
@@ -97,7 +97,8 @@ func (p *Program) Search(
 			return nil, err
 		}
 		if res.RouteDecision.Blocked {
-			return out, nil
+			return nil, routeRefusal(res.RouteDecision.Code,
+				res.RouteDecision.Reason)
 		}
 		for _, f := range res.Flights {
 			out = append(out, offers(f, q, booking)...)
@@ -151,6 +152,20 @@ func refusal(markup string) error {
 		return errLimited
 	}
 	return errors.New("qantas: the search answer could not be read")
+}
+
+// routeRefusal is the error for a search the finder refused to run for its
+// route, given the refusal's code and reason as the answer names them.
+func routeRefusal(code, reason string) error {
+	why := strings.TrimSpace(code + " " + reason)
+	if code == "DOMESTIC_AU_ONLY" {
+		why = "domestic Australian routes are not in the Flight Reward " +
+			"finder"
+	}
+	if why == "" {
+		why = "no reason given"
+	}
+	return fmt.Errorf("qantas: the finder refused the route: %s", why)
 }
 
 // searchParams are the finder's query parameters for page of q: origin,
@@ -224,6 +239,7 @@ type answer struct {
 	} `json:"pagination"`
 	RouteDecision struct {
 		Blocked bool   `json:"blocked"`
+		Code    string `json:"code"`
 		Reason  string `json:"reason"`
 	} `json:"routeDecision"`
 }

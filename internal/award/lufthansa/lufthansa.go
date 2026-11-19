@@ -20,6 +20,7 @@ import (
 	"math"
 	"net/http"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/joakimcarlsson/flight-club/internal/award"
@@ -83,9 +84,20 @@ var cabinFamilies = []cabinFamily{
 	{award.First, "CFFFIRSIN2"},
 }
 
+// errNoAward marks the gateway's answer for a route or cabin it has no
+// award on: a 400 with its generic "Unfortunately an error occured".
+var errNoAward = errors.New("no award")
+
+// noAwardMessage starts the message of the gateway's 400 answer for a
+// route or cabin without awards.
+const noAwardMessage = "Unfortunately an error occured"
+
 // Program searches Miles & More award prices.
 type Program struct {
 	client *http.Client
+	mu     sync.Mutex
+	geo    *geo
+	retry  time.Time
 }
 
 // New builds a Program that makes its requests with client.
@@ -99,32 +111,53 @@ func (p *Program) Key() string {
 }
 
 // Search returns the cheapest Miles & More award of each cabin on the day
-// of q. A cabin the gateway fails to answer is skipped; Search returns an
-// error only when every cabin fails.
+// of q, from every airport of the origin. The gateway is asked the way the
+// site asks it: from an airport, with the country of that airport and its
+// currency. A route or cabin without awards gives no offers; Search returns
+// one error only when no request succeeds and some failed for another
+// reason.
 func (p *Program) Search(
 	ctx context.Context,
 	q award.Query,
 ) ([]award.Offer, error) {
+	g := p.loadGeo(ctx)
 	var offers []award.Offer
-	var errs []error
+	var failed []error
+	answered := false
 	seen := map[string]bool{}
-	for _, cf := range cabinFamilies {
-		ans, err := p.bestByDay(ctx, q, cf.family)
-		if err != nil {
-			errs = append(errs, fmt.Errorf("%s: %w", cf.cabin, err))
-			continue
-		}
-		for _, o := range ans.offers(q, cf.cabin) {
-			id := offerID(o)
-			if seen[id] {
+	froms := g.origins(q.Origin)
+	for _, from := range froms {
+		sub := q
+		sub.Origin = from.code
+		for _, cf := range cabinFamilies {
+			ans, err := p.bestByDay(ctx, sub, from, cf.family)
+			if errors.Is(err, errNoAward) {
+				answered = true
 				continue
 			}
-			seen[id] = true
-			offers = append(offers, o)
+			if err != nil {
+				if ctx.Err() != nil {
+					return nil, ctx.Err()
+				}
+				failed = append(failed, err)
+				continue
+			}
+			answered = true
+			for _, o := range ans.offers(sub, cf.cabin) {
+				id := offerID(o)
+				if seen[id] {
+					continue
+				}
+				seen[id] = true
+				offers = append(offers, o)
+			}
 		}
 	}
-	if len(errs) == len(cabinFamilies) {
-		return nil, errors.Join(errs...)
+	if !answered && len(failed) > 0 {
+		return nil, fmt.Errorf(
+			"lufthansa: %d of %d requests failed: %w",
+			len(failed), len(froms)*len(cabinFamilies), failed[0],
+		)
 	}
 	return offers, nil
 }
@@ -166,23 +199,25 @@ type tripDetails struct {
 }
 
 // bestByDay asks the gateway for the cheapest award in family on the day
-// of q. It returns an error when the gateway cannot be reached, answers
-// with a status other than 200, or answers with something that is not
-// JSON.
+// of q, departing from airport from. It returns errNoAward when the
+// gateway has no award there, and another error when the gateway cannot
+// be reached, answers with another status than 200, or answers with
+// something that is not JSON.
 func (p *Program) bestByDay(
 	ctx context.Context,
 	q award.Query,
+	from origin,
 	family string,
 ) (*answer, error) {
 	body, err := json.Marshal(request{
 		CommercialFareFamilies: []string{family},
 		CorporateCodes:         []int{corporateCode},
-		CountryOfCommencement:  commencementCountry,
-		CurrencyCode:           taxCurrency,
+		CountryOfCommencement:  from.country,
+		CurrencyCode:           from.currency,
 		Itineraries: []itinerary{{
 			DepartureDateTime: q.Date.Format(dateLayout) +
 				"T00:00:00",
-			OriginLocationCode:      strings.ToUpper(q.Origin),
+			OriginLocationCode:      from.code,
 			DestinationLocationCode: strings.ToUpper(q.Destination),
 		}},
 		TripDetails: tripDetails{RangeOfDeparture: rangeOfDeparture},
@@ -215,6 +250,10 @@ func (p *Program) bestByDay(
 	if err != nil {
 		return nil, err
 	}
+	if resp.StatusCode == http.StatusBadRequest &&
+		bytes.Contains(raw, []byte(noAwardMessage)) {
+		return nil, errNoAward
+	}
 	if resp.StatusCode != http.StatusOK {
 		return nil, fmt.Errorf(
 			"bestbyday: status %d: %s",
@@ -229,9 +268,9 @@ func (p *Program) bestByDay(
 	return &ans, nil
 }
 
-// snippet returns the start of raw, for an error message.
+// snippet returns the start of raw, for a short error message.
 func snippet(raw []byte) string {
-	const most = 200
+	const most = 120
 	s := strings.TrimSpace(string(raw))
 	if len(s) > most {
 		s = s[:most]

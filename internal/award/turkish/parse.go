@@ -120,7 +120,7 @@ func parse(body []byte, q award.Query) ([]award.Offer, error) {
 	}
 	if !a.Success {
 		msg := failureText(a.StatusDetailList)
-		if noFlights(msg) {
+		if noFlights(msg) || strings.Contains(msg, "Error-DS-12029") {
 			return []award.Offer{}, nil
 		}
 		return nil, fmt.Errorf("turkish: availability failed: %s", msg)

@@ -93,6 +93,45 @@ func (p *Program) Search(
 	ctx context.Context,
 	q award.Query,
 ) ([]award.Offer, error) {
+	var err error
+	for i := range attempts {
+		if i > 0 && !pause(ctx, retryDelay) {
+			return nil, err
+		}
+		var out []award.Offer
+		out, err = p.attempt(ctx, q)
+		if err == nil || ctx.Err() != nil {
+			return out, err
+		}
+	}
+	return nil, err
+}
+
+// attempts is how many times a search is tried, since the shopping API
+// now and then answers a fresh session with a stub instead of fares.
+const attempts = 3
+
+// retryDelay is how long a refused search waits before it is tried again.
+const retryDelay = 8 * time.Second
+
+// pause waits d, reporting false when ctx ends first.
+func pause(ctx context.Context, d time.Duration) bool {
+	t := time.NewTimer(d)
+	defer t.Stop()
+	select {
+	case <-ctx.Done():
+		return false
+	case <-t.C:
+		return true
+	}
+}
+
+// attempt loads the results page for q once and reads its offers. It
+// fails as Search does.
+func (p *Program) attempt(
+	ctx context.Context,
+	q award.Query,
+) ([]award.Offer, error) {
 	booking := bookingURL(q)
 	captured, err := p.browser.Collect(ctx, booking, browser.CollectOpts{
 		Timeout:     loadTimeout,
@@ -108,12 +147,20 @@ func (p *Program) Search(
 		return nil, fmt.Errorf("southwest: %w", err)
 	}
 	var lastErr error = errNoAnswer
+	var empty []award.Offer
 	for _, b := range captured.Bodies {
 		out, err := parse(b.Data, q, booking)
-		if err == nil {
+		switch {
+		case err != nil:
+			lastErr = err
+		case len(out) > 0:
 			return out, nil
+		default:
+			empty = out
 		}
-		lastErr = err
+	}
+	if empty != nil {
+		return empty, nil
 	}
 	return nil, lastErr
 }
@@ -193,7 +240,9 @@ type amount struct {
 
 // parse turns a shopping API answer into the offers for q, booked at
 // booking. It returns an error when body is not the API's JSON or the API
-// says the search failed without a reason that means no flights.
+// says the search failed without a reason that means no flights. An
+// answer without search results, such as the short stub the bot
+// protection serves, is an error unless it says there are no flights.
 func parse(
 	body []byte,
 	q award.Query,
@@ -205,11 +254,17 @@ func parse(
 	}
 	out := []award.Offer{}
 	if a.Data == nil || a.Data.SearchResults == nil {
-		if a.Success != nil && !*a.Success && !noFlights(body) {
-			return nil, fmt.Errorf("southwest: search failed: %s",
-				compact(a.Notifications))
+		if a.Success != nil && !*a.Success && noFlights(body) ||
+			strings.Contains(string(body), `"fieldErrors":[{`) {
+			return out, nil
 		}
-		return out, nil
+		if strings.Contains(string(body), `"code"`) &&
+			strings.Contains(string(body), "403") {
+			return nil, fmt.Errorf("southwest: blocked by bot "+
+				"protection: %s", compact(body))
+		}
+		return nil, fmt.Errorf("southwest: search failed: %s",
+			compact(body))
 	}
 	n := max(q.Passengers, 1)
 	for _, ap := range a.Data.SearchResults.AirProducts {
@@ -237,7 +292,7 @@ func noFlights(body []byte) bool {
 
 // compact shortens raw JSON to a line fit for an error message.
 func compact(raw json.RawMessage) string {
-	s := strings.TrimSpace(string(raw))
+	s := strings.Join(strings.Fields(string(raw)), " ")
 	if len(s) > 300 {
 		s = s[:300] + "…"
 	}

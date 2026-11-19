@@ -50,9 +50,13 @@ const userAgent = "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 " +
 const maxBody = 16 << 20
 
 // noAvailability are the API's error codes for a search that found no
-// flights: 225050 for a route with no seats that day and 225036 for a
-// route SAS does not sell. Both are no availability rather than a failure.
-var noAvailability = map[string]bool{"225050": true, "225036": true}
+// flights: 225050 for a route with no seats that day, 225036 for a route
+// SAS does not sell, 225024 for a date with no offers and 225071 for a
+// departure less than three days away, which points cannot book. All are
+// no availability rather than a failure.
+var noAvailability = map[string]bool{
+	"225050": true, "225036": true, "225024": true, "225071": true,
+}
 
 // Program searches flysas.com.
 type Program struct {
@@ -60,10 +64,12 @@ type Program struct {
 }
 
 // New builds a Program that makes its requests with a copy of client whose
-// transport offers only classic TLS key exchanges. flysas.com sits behind
-// Cloudflare, which denies Go's default TLS handshake (it offers the
-// post-quantum X25519MLKEM768 key share) with a "Denied boarding" 403
-// while it answers the same request over a classic handshake. client's
+// transport offers only classic TLS key exchanges and speaks HTTP/1.1.
+// flysas.com sits behind Cloudflare, which denies Go's default TLS
+// handshake (it offers the post-quantum X25519MLKEM768 key share) with a
+// "Denied boarding" 403, and answers Go's HTTP/2 client, whose fingerprint
+// is no browser's, with a "Just a moment" challenge 403. It answers the
+// same request over a classic handshake and HTTP/1.1. client's
 // timeout, cookie jar and redirect policy are kept; a transport that is not
 // an *http.Transport is used as it is.
 func New(client *http.Client) *Program {
@@ -73,8 +79,9 @@ func New(client *http.Client) *Program {
 }
 
 // classicTLS returns a copy of rt, or of http.DefaultTransport when rt is
-// nil, that prefers only the X25519 and P-256 key exchanges. It returns rt
-// unchanged when it is not an *http.Transport.
+// nil, that prefers only the X25519 and P-256 key exchanges and never
+// negotiates HTTP/2. It returns rt unchanged when it is not an
+// *http.Transport.
 func classicTLS(rt http.RoundTripper) http.RoundTripper {
 	if rt == nil {
 		rt = http.DefaultTransport
@@ -90,6 +97,9 @@ func classicTLS(rt http.RoundTripper) http.RoundTripper {
 	t.TLSClientConfig.CurvePreferences = []tls.CurveID{
 		tls.X25519, tls.CurveP256,
 	}
+	t.ForceAttemptHTTP2 = false
+	t.TLSClientConfig.NextProtos = []string{"http/1.1"}
+	t.TLSNextProto = map[string]func(string, *tls.Conn) http.RoundTripper{}
 	return t
 }
 
