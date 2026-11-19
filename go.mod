@@ -11,7 +11,7 @@ require (
 	github.com/joakimcarlsson/ai/session v0.1.9
 	github.com/joakimcarlsson/ai/tool v0.1.5
 	github.com/joakimcarlsson/ai/types v0.2.1
-	github.com/joakimcarlsson/bonk v0.5.1
+	github.com/joakimcarlsson/bonk v0.5.2
 	github.com/joakimcarlsson/minmux/openapi v0.2.0
 	github.com/joakimcarlsson/minmux/outputcache v0.1.0
 	github.com/joakimcarlsson/minmux/outputcache/inmemory v0.1.0

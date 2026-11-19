@@ -53,8 +53,8 @@ github.com/joakimcarlsson/ai/tracing v0.2.3 h1:JanlTuJROK11bC5joUJgxhmAAiiOdez8S
 github.com/joakimcarlsson/ai/tracing v0.2.3/go.mod h1:NSznQ/1Wp9znb/Kdx+tl8aTY4Z4XsVIlE3t5ta/LryY=
 github.com/joakimcarlsson/ai/types v0.2.1 h1:mwfq75cux4knNm2GYR6nUBHHJxliQPBvYbzIh9Es74s=
 github.com/joakimcarlsson/ai/types v0.2.1/go.mod h1:egQiN2iGx34z5ZiD7bW7QSyKHvKvRZecgej3UwqzkAw=
-github.com/joakimcarlsson/bonk v0.5.1 h1:ub4gpB9tjaF6feeDQgHr5MlcSsX1Zv1iKxoaCrgQqBk=
-github.com/joakimcarlsson/bonk v0.5.1/go.mod h1:zFZWStSeqh3zoFaF12U01PWE+pGnjaeulfRZa9KuvvA=
+github.com/joakimcarlsson/bonk v0.5.2 h1:0jZNmgenqK8kDMfhFgiT6u5nix13SuZe846VtSzLwu4=
+github.com/joakimcarlsson/bonk v0.5.2/go.mod h1:zFZWStSeqh3zoFaF12U01PWE+pGnjaeulfRZa9KuvvA=
 github.com/joakimcarlsson/minmux/openapi v0.2.0 h1:sbcm8mrafN795YB8MWyWXH1NMoNitPr+0oeYrl0nU20=
 github.com/joakimcarlsson/minmux/openapi v0.2.0/go.mod h1:JO04zetQg0Jl3YR9jmwgWtBBZkFHVAfRMxnBW7pgK5I=
 github.com/joakimcarlsson/minmux/outputcache v0.1.0 h1:CFv9v/e8FidXOu6GrAi5WdiaX5ms8qpgYjfyvcc2Dgo=
