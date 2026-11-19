@@ -35,6 +35,9 @@ const AIRLINES: Record<string, string> = {
   VA: "Virgin Australia",
   EY: "Etihad",
   WN: "Southwest",
+  AD: "Azul",
+  F9: "Frontier",
+  CA: "Air China",
 };
 
 /** Display names of the loyalty programs, by key. */
@@ -54,6 +57,10 @@ const PROGRAMS: Record<string, string> = {
   lufthansa: "Lufthansa Miles & More",
   korean: "Korean Air SKYPASS",
   copa: "Copa ConnectMiles",
+  american: "American AAdvantage",
+  azul: "Azul Fidelidade",
+  frontier: "Frontier Miles",
+  airchina: "Air China PhoenixMiles",
 };
 
 /** The airline that runs each loyalty program, by program key. */
@@ -73,6 +80,10 @@ const PROGRAM_AIRLINES: Record<string, string> = {
   lufthansa: "LH",
   korean: "KE",
   copa: "CM",
+  american: "AA",
+  azul: "AD",
+  frontier: "F9",
+  airchina: "CA",
 };
 
 /**

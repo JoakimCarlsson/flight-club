@@ -17,12 +17,16 @@ import (
 	llmopenrouter "github.com/joakimcarlsson/ai/llm/openrouter"
 
 	"github.com/joakimcarlsson/flight-club/internal/award"
+	"github.com/joakimcarlsson/flight-club/internal/award/airchina"
 	"github.com/joakimcarlsson/flight-club/internal/award/alaska"
+	"github.com/joakimcarlsson/flight-club/internal/award/american"
 	"github.com/joakimcarlsson/flight-club/internal/award/ana"
+	"github.com/joakimcarlsson/flight-club/internal/award/azul"
 	"github.com/joakimcarlsson/flight-club/internal/award/cathay"
 	"github.com/joakimcarlsson/flight-club/internal/award/copa"
 	"github.com/joakimcarlsson/flight-club/internal/award/delta"
 	"github.com/joakimcarlsson/flight-club/internal/award/etihad"
+	"github.com/joakimcarlsson/flight-club/internal/award/frontier"
 	"github.com/joakimcarlsson/flight-club/internal/award/jetblue"
 	"github.com/joakimcarlsson/flight-club/internal/award/korean"
 	"github.com/joakimcarlsson/flight-club/internal/award/lufthansa"
@@ -137,6 +141,11 @@ func run() error {
 			Concurrency: 1,
 			MinInterval: 2 * time.Second,
 		},
+		{
+			Program:     airchina.New(newClient()),
+			Concurrency: 1,
+			MinInterval: 2 * time.Second,
+		},
 	}
 	b, err := browser.New(browser.Options{
 		Headless:    true,
@@ -159,6 +168,9 @@ func run() error {
 			browserProgram(velocity.New(b), 1, 10*time.Second),
 			browserProgram(korean.New(b), 1, 5*time.Second),
 			browserProgram(copa.New(b), 1, 10*time.Second),
+			browserProgram(azul.New(b), 1, 10*time.Second),
+			browserProgram(frontier.New(b), 1, 10*time.Second),
+			browserProgram(american.New(b), 1, 30*time.Second),
 		)
 	}
 	awards := award.NewSearcher(programs...)
